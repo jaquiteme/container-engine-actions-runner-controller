@@ -15,6 +15,13 @@ import (
 	docker "github.com/fsouza/go-dockerclient"
 )
 
+const (
+	Red    = "\033[31m"
+	Green  = "\033[32m"
+	Yellow = "\033[33m"
+	Reset  = "\033[0m"
+)
+
 var (
 	infoLogger    = log.New(os.Stdout, "[INFO] ", log.Ldate|log.Ltime|log.Lshortfile)
 	warningLogger = log.New(os.Stdout, "[WARN] ", log.Ldate|log.Ltime|log.Lshortfile)
@@ -54,10 +61,31 @@ func getContainerSocket(runtime string) string {
 	return "/var/run/docker.sock"
 }
 
+// ListenContainerEvents start listen on container events
+// and fire a callback when the container is terminating
+func ListenContainerEvents(client *docker.Client, onDie func(containerID string, exitCode string)) error {
+	events := make(chan *docker.APIEvents)
+	if err := client.AddEventListener(events); err != nil {
+		return err
+	}
+
+	go func() {
+		for ev := range events {
+			if ev.Status == "die" {
+				// exitCode => docker, containerExitCode => podman
+				exitCode := ev.Actor.Attributes["containerExitCode"]
+				onDie(ev.ID, exitCode)
+			}
+		}
+	}()
+
+	return nil
+}
+
 // Create a container througth container runtime socket
 func createContainerUsingSocket(runtime string, imageName string, env []string) {
 	socket := getContainerSocket(runtime)
-	infoLogger.Println("Container runtime socket :", socket)
+	infoLogger.Println("Container runtime socket path used:", socket)
 	client, err := docker.NewClient("unix://" + socket)
 
 	if err != nil {
@@ -73,9 +101,6 @@ func createContainerUsingSocket(runtime string, imageName string, env []string) 
 				"platform": "github",
 			},
 		},
-		HostConfig: &docker.HostConfig{
-			AutoRemove: true,
-		},
 	}
 
 	container, err := client.CreateContainer(opts)
@@ -88,6 +113,25 @@ func createContainerUsingSocket(runtime string, imageName string, env []string) 
 		log.Fatalf("Encouter an error when starting container: %v", err)
 	}
 	infoLogger.Println("Container started with ID:", container.ID)
+
+	err = ListenContainerEvents(client, func(containerID string, exitCode string) {
+		if _exitCode, err := strconv.Atoi(exitCode); err == nil {
+			if _exitCode != 0 {
+				errorLogger.Printf("Container %s terminated with exit code %s\n", containerID, exitCode)
+				errorLogger.Println("To find out what happened, please inspect the container logs")
+			} else {
+				infoLogger.Printf("Container %s terminated with exit code %s\n", containerID, exitCode)
+				client.RemoveContainer(docker.RemoveContainerOptions{
+					ID: containerID,
+				})
+			}
+		} else {
+			fmt.Printf("Cannot convert %s into integer\n", os.Getenv("PORT"))
+		}
+	})
+	if err != nil {
+		errorLogger.Fatal(err)
+	}
 }
 
 // Check if crypto signature are equals

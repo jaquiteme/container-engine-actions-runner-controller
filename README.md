@@ -30,6 +30,6 @@ SPARC is a lightweight solution to automatically scale and provision self-hosted
 
 ## TODO
 
-[] - Write a Makefile to automate installation
-[] - Check idle jobs
-[] - Collect runners logs
+- Write a Makefile to automate installation
+- Check idle jobs on GitHub
+- Collect runners logs
