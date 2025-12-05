@@ -7,7 +7,7 @@ install:
 	/bin/bash scripts/install_podman.sh
 
 build: $(BIN_DIR) build-ct-image
-	go build -o $(BIN_DIR)/$(BINARY_FILE) server/server.go server/config.go
+	go build -o $(BIN_DIR)/$(BINARY_FILE) server/server.go server/config.go server/logger.go server/utils.go
 
 # Create binary dir if not exists
 $(BIN_DIR):

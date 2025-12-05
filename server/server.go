@@ -7,25 +7,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"os"
 	"strconv"
 
 	docker "github.com/fsouza/go-dockerclient"
-)
-
-const (
-	Red    = "\033[31m"
-	Green  = "\033[32m"
-	Yellow = "\033[33m"
-	Reset  = "\033[0m"
-)
-
-var (
-	infoLogger    = log.New(os.Stdout, "[INFO] ", log.Ldate|log.Ltime|log.Lshortfile)
-	warningLogger = log.New(os.Stdout, "[WARN] ", log.Ldate|log.Ltime|log.Lshortfile)
-	errorLogger   = log.New(os.Stderr, "[ERROR] ", log.Ldate|log.Ltime|log.Lshortfile)
 )
 
 // Github Workflow Event Type
@@ -36,33 +22,33 @@ type WorkflowJobEvent struct {
 	} `json:"workflow_job"`
 }
 
-// Autodect container runtime execution
-func whichContainerRuntime() string {
+// Autodect container engine execution installed on a host
+func whichContainerEngine() (string, error) {
 	if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
-		return "podman"
+		return "podman", nil
 	}
 	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
-		return "docker"
+		return "docker", nil
 	}
-	return "none"
+	return "none", fmt.Errorf("No container engine found on this server.")
 }
 
-// Get container runtime socket path
-func getContainerSocket(runtime string) string {
-	if runtime == "podman" {
+// Get container engine socket path
+func getContainerSocket(ce string) string {
+	if ce == "podman" {
 		// For rootful podman
-		podman_runtime := "/run/podman/podman.sock"
+		podmanSocketPath := "/run/podman/podman.sock"
 		// For rootless podman
 		if val := os.Getenv("XDG_RUNTIME_DIR"); val != "" {
-			podman_runtime = val + "/podman/podman.sock"
+			podmanSocketPath = val + "/podman/podman.sock"
 		}
-		return podman_runtime
+		return podmanSocketPath
 	}
 	return "/var/run/docker.sock"
 }
 
 // ListenContainerEvents start listen on container events
-// and fire a callback when the container is terminating
+// and trigger a callback when the container is terminating
 func ListenContainerEvents(client *docker.Client, onDie func(containerID string, exitCode string)) error {
 	events := make(chan *docker.APIEvents)
 	if err := client.AddEventListener(events); err != nil {
@@ -82,16 +68,43 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 	return nil
 }
 
-// Create a container througth container runtime socket
-func createContainerUsingSocket(runtime string, imageName string, env []string) {
-	socket := getContainerSocket(runtime)
-	infoLogger.Println("Container runtime socket path used:", socket)
-	client, err := docker.NewClient("unix://" + socket)
-
+// provisionNewContainer creates and starts a container using the specified container engine socket,
+// image name, and environment variables. It listens for container termination events and handles cleanup or error logging.
+// Parameters:
+//   - ce: the container engine type ("docker" or "podman").
+//   - imageName: the name of the container image to use.
+//   - env: a slice of environment variables to set in the container.
+func provisionNewContainer(ce string, imageName string, env []string) error {
+	client, err := initLocalContainerClient(ce)
 	if err != nil {
-		log.Fatalf("Unable to init Docker client: %v", err)
+		return err
 	}
 
+	container, err := createContainer(client, imageName, env)
+	if err != nil {
+		return err
+	}
+
+	err = client.StartContainer(container.ID, nil)
+	if err != nil {
+		return fmt.Errorf("Encounter an error when starting container: %v", err)
+	}
+	infoLogger.Println("Container started with ID:", container.ID)
+
+	return ListenContainerEvents(client, handleContainerExit(client))
+}
+
+func initLocalContainerClient(ce string) (*docker.Client, error) {
+	socket := getContainerSocket(ce)
+	infoLogger.Println("Container engine socket path used:", socket)
+	client, err := docker.NewClient("unix://" + socket)
+	if err != nil {
+		return nil, fmt.Errorf("unable to init Docker client: %v", err)
+	}
+	return client, nil
+}
+
+func createContainer(client *docker.Client, imageName string, env []string) (*docker.Container, error) {
 	opts := docker.CreateContainerOptions{
 		Config: &docker.Config{
 			Image: imageName,
@@ -102,35 +115,26 @@ func createContainerUsingSocket(runtime string, imageName string, env []string) 
 			},
 		},
 	}
-
 	container, err := client.CreateContainer(opts)
 	if err != nil {
-		log.Fatalf("Encouter an error when creating container: %v", err)
+		return nil, fmt.Errorf("Encounter an error when creating container: %v", err)
 	}
+	return container, nil
+}
 
-	err = client.StartContainer(container.ID, nil)
-	if err != nil {
-		log.Fatalf("Encouter an error when starting container: %v", err)
-	}
-	infoLogger.Println("Container started with ID:", container.ID)
-
-	err = ListenContainerEvents(client, func(containerID string, exitCode string) {
+func handleContainerExit(client *docker.Client) func(string, string) {
+	return func(containerID string, exitCode string) {
 		if _exitCode, err := strconv.Atoi(exitCode); err == nil {
 			if _exitCode != 0 {
 				errorLogger.Printf("Container %s terminated with exit code %s\n", containerID, exitCode)
 				errorLogger.Println("To find out what happened, please inspect the container logs")
 			} else {
 				infoLogger.Printf("Container %s terminated with exit code %s\n", containerID, exitCode)
-				client.RemoveContainer(docker.RemoveContainerOptions{
-					ID: containerID,
-				})
+				client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID})
 			}
 		} else {
-			fmt.Printf("Cannot convert %s into integer\n", os.Getenv("PORT"))
+			errorLogger.Println(err)
 		}
-	})
-	if err != nil {
-		errorLogger.Fatal(err)
 	}
 }
 
@@ -143,9 +147,9 @@ func isValidSignature(body []byte, signature string, secret string) bool {
 }
 
 type ContainerOpts struct {
-	Runtime string
-	Image   string
-	Env     []string
+	Engine string
+	Image  string
+	Env    []string
 }
 
 var (
@@ -156,12 +160,15 @@ var (
 
 func containerWorker() {
 	for val := range containerJobQueue {
-		createContainerUsingSocket(val.Runtime, val.Image, val.Env)
+		err := provisionNewContainer(val.Engine, val.Image, val.Env)
+		if err != nil {
+			errorLogger.Println(err)
+		}
 	}
 }
 
 // Webhook endpoint handler
-func (cfg *Config) webhookHandler(w http.ResponseWriter, r *http.Request) {
+func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
@@ -170,7 +177,7 @@ func (cfg *Config) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	defer r.Body.Close()
 
 	signature := r.Header.Get("X-Hub-Signature-256")
-	secret := cfg.WebhookToken
+	secret := sm.Config.WebhookToken
 
 	// If a secret is configured, require and validate signature.
 	if secret != "" {
@@ -199,15 +206,23 @@ func (cfg *Config) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	infoLogger.Printf("New job queued: ID=%d", event.WorkflowJob.ID)
-	runtime := cfg.RunnerContainerRuntime
-	if runtime == "" {
-		runtime = whichContainerRuntime()
+	ce := sm.Config.RunnerContainerEngine
+	if ce == "" {
+		ce, err = whichContainerEngine()
 	}
-	infoLogger.Println("Container runtime:", runtime)
+	infoLogger.Println("Container Engine:", ce)
+
+	runnerRegistrationToken, err := sm.getRunnerRegistationToken()
+	if err != nil {
+		errorLogger.Fatalln(err)
+		return
+	}
+
 	select {
-	case containerJobQueue <- ContainerOpts{Runtime: runtime, Image: cfg.RunnerContainerImage, Env: []string{
-		"GH_RUNNER_REPO_PATH=" + cfg.RunnerRepoPath,
-		"GH_RUNNER_TOKEN=" + cfg.RunnerRegistrationToken}}:
+	case containerJobQueue <- ContainerOpts{Engine: ce, Image: sm.Config.RunnerContainerImage, Env: []string{
+		"GH_RUNNER_REPO_PATH=" + sm.Config.RunnerRepoPath,
+		"GH_RUNNER_TOKEN=" + runnerRegistrationToken,
+	}}:
 		infoLogger.Println("Job added to container creation queue")
 	default:
 		warningLogger.Println("Container creation queue is full, dropping job")
@@ -220,11 +235,21 @@ func (cfg *Config) webhookHandler(w http.ResponseWriter, r *http.Request) {
 func main() {
 	port := 3000
 
-	cfg, err := readConfig()
+	cfg, err := ReadConfig()
 	if err != nil {
 		errorLogger.Fatal(err)
 	}
-	_runnerConfig := &cfg
+
+	// TODO: check if image exists
+
+	manager := &ServerConfigManager{
+		Config: cfg,
+	}
+
+	_, err = manager.getRunnerRegistationToken()
+	if err != nil {
+		errorLogger.Fatal(err)
+	}
 
 	// Start worker pool
 	for range maxConcurrentContainers {
@@ -239,7 +264,7 @@ func main() {
 		}
 	}
 
-	http.HandleFunc("/webhook", _runnerConfig.webhookHandler)
+	http.HandleFunc("/webhook", manager.webhookHandler)
 	infoLogger.Printf("Github webhook server is listening on port %d\n", port)
 	addr := fmt.Sprintf(":%d", port)
 	if err := http.ListenAndServe(addr, nil); err != nil {
