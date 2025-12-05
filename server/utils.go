@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"sync"
 	"time"
+
+	docker "github.com/fsouza/go-dockerclient"
 )
 
 type GHRunnerRegistrationTokenResponse struct {
@@ -22,9 +24,10 @@ type RunnerRegistrationToken struct {
 
 // token manager type with concurrency management
 type ServerConfigManager struct {
-	Mu     sync.Mutex
-	Token  RunnerRegistrationToken
-	Config Config
+	Mu              sync.Mutex
+	Token           RunnerRegistrationToken
+	Config          *Config
+	ContainerClient *docker.Client
 }
 
 // fetchNewRunnerRegistrationTokenForPrivateRepo make an API request to retrieve a runner action token

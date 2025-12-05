@@ -33,8 +33,9 @@ func whichContainerEngine() (string, error) {
 	return "none", fmt.Errorf("No container engine found on this server.")
 }
 
-// Get container engine socket path
-func getContainerSocket(ce string) string {
+// GetContainerSocketPath return container engine socket path
+// Parameters:
+func GetContainerSocketPath(ce string) string {
 	if ce == "podman" {
 		// For rootful podman
 		podmanSocketPath := "/run/podman/podman.sock"
@@ -74,12 +75,7 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 //   - ce: the container engine type ("docker" or "podman").
 //   - imageName: the name of the container image to use.
 //   - env: a slice of environment variables to set in the container.
-func provisionNewContainer(ce string, imageName string, env []string) error {
-	client, err := initLocalContainerClient(ce)
-	if err != nil {
-		return err
-	}
-
+func provisionNewContainer(client *docker.Client, imageName string, env []string) error {
 	container, err := createContainer(client, imageName, env)
 	if err != nil {
 		return err
@@ -95,8 +91,8 @@ func provisionNewContainer(ce string, imageName string, env []string) error {
 }
 
 func initLocalContainerClient(ce string) (*docker.Client, error) {
-	socket := getContainerSocket(ce)
-	infoLogger.Println("Container engine socket path used:", socket)
+	socket := GetContainerSocketPath(ce)
+	infoLogger.Println("Container engine socket path found:", socket)
 	client, err := docker.NewClient("unix://" + socket)
 	if err != nil {
 		return nil, fmt.Errorf("unable to init Docker client: %v", err)
@@ -147,7 +143,7 @@ func isValidSignature(body []byte, signature string, secret string) bool {
 }
 
 type ContainerOpts struct {
-	Engine string
+	Client *docker.Client
 	Image  string
 	Env    []string
 }
@@ -160,7 +156,7 @@ var (
 
 func containerWorker() {
 	for val := range containerJobQueue {
-		err := provisionNewContainer(val.Engine, val.Image, val.Env)
+		err := provisionNewContainer(val.Client, val.Image, val.Env)
 		if err != nil {
 			errorLogger.Println(err)
 		}
@@ -219,10 +215,13 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	select {
-	case containerJobQueue <- ContainerOpts{Engine: ce, Image: sm.Config.RunnerContainerImage, Env: []string{
-		"GH_RUNNER_REPO_PATH=" + sm.Config.RunnerRepoPath,
-		"GH_RUNNER_TOKEN=" + runnerRegistrationToken,
-	}}:
+	case containerJobQueue <- ContainerOpts{
+		Client: sm.ContainerClient,
+		Image:  sm.Config.RunnerContainerImage,
+		Env: []string{
+			"GH_RUNNER_REPO_PATH=" + sm.Config.RunnerRepoPath,
+			"GH_RUNNER_TOKEN=" + runnerRegistrationToken,
+		}}:
 		infoLogger.Println("Job added to container creation queue")
 	default:
 		warningLogger.Println("Container creation queue is full, dropping job")
@@ -232,6 +231,16 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	w.Write([]byte(`{}`))
 }
 
+// containerImageExists check if a container image exists
+func IsContainerImageExists(client *docker.Client, imageName string) (bool, error) {
+	_, err := client.InspectImage(imageName)
+	if err != nil {
+		return false, fmt.Errorf("Container image %s not found: %v", imageName, err)
+	}
+	infoLogger.Printf("Container image %s found.", imageName)
+	return true, nil
+}
+
 func main() {
 	port := 3000
 
@@ -239,11 +248,25 @@ func main() {
 	if err != nil {
 		errorLogger.Fatal(err)
 	}
+	// Auto detect container engine
+	ce := cfg.RunnerContainerEngine
+	if ce == "" {
+		ce, _ = whichContainerEngine()
+	}
+	infoLogger.Println("Container Engine:", ce)
+	containerClient, err := initLocalContainerClient(ce)
+	if err != nil {
+		errorLogger.Fatal(err)
+	}
 
-	// TODO: check if image exists
+	imageExists, err := IsContainerImageExists(containerClient, cfg.RunnerContainerImage)
+	if !imageExists {
+		errorLogger.Fatal(err)
+	}
 
 	manager := &ServerConfigManager{
-		Config: cfg,
+		Config:          &cfg,
+		ContainerClient: containerClient,
 	}
 
 	_, err = manager.getRunnerRegistationToken()
