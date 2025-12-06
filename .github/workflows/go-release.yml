@@ -1,0 +1,46 @@
+name: Go Release
+
+on:
+  push:
+    tags:
+      - "v*" # Ex: v1.0.0, v1.0, etc.
+
+env:
+  BINARY_FILENAME: "ce-arc-server"
+  PACKAGES_DIR: "./server"
+  GO_VERSION: "1.25.4"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "${{ env.GO_VERSION }}"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Cross-compile binaries
+        run: |
+          BINARY_NAME=${{ env.BINARY_FILENAME }}
+          VERSION=${{ github.ref_name }}
+          PACKAGES_DIR=${{ env.PACKAGES_DIR }}
+          mkdir -p dist
+          GOOS=linux   GOARCH=amd64 go build -o dist/${BINARY_NAME}-${VERSION}-linux-amd64 "${PACKAGES_DIR}"
+          GOOS=linux   GOARCH=arm64 go build -o dist/${BINARY_NAME}-${VERSION}-linux-arm64 "${PACKAGES_DIR}"
+          GOOS=windows GOARCH=amd64 go build -o dist/${BINARY_NAME}-${VERSION}-windows-amd64.exe "${PACKAGES_DIR}"
+          GOOS=darwin  GOARCH=arm64 go build -o dist/${BINARY_NAME}-${VERSION}-darwin-arm64 "${PACKAGES_DIR}"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/*
