@@ -33,7 +33,7 @@ jobs:
         uses: redhat-actions/buildah-build@v2
         with:
           image: "${{ secrets.CT_REGISTRY_USERNAME }}/${{ env.BINARY_FILENAME }}"
-          tags: "${{ steps.set-tag.outputs.image_tag }}"
+          tags: "latest ${{ steps.set-tag.outputs.image_tag }}"
           context: ./runner
           containerfiles: |
             ./runner/Dockerfile
