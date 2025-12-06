@@ -23,7 +23,7 @@ type WorkflowJobEvent struct {
 }
 
 // Autodect container engine execution installed on a host
-func whichContainerEngine() (string, error) {
+func WhichContainerEngine() (string, error) {
 	if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
 		return "podman", nil
 	}
@@ -56,6 +56,7 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 		return err
 	}
 
+	infoLogger.Println("Start listening on container events.")
 	go func() {
 		for ev := range events {
 			if ev.Status == "die" {
@@ -69,13 +70,13 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 	return nil
 }
 
-// provisionNewContainer creates and starts a container using the specified container engine socket,
+// ProvisionNewContainer creates and starts a container using the specified container engine socket,
 // image name, and environment variables. It listens for container termination events and handles cleanup or error logging.
 // Parameters:
 //   - ce: the container engine type ("docker" or "podman").
 //   - imageName: the name of the container image to use.
 //   - env: a slice of environment variables to set in the container.
-func provisionNewContainer(client *docker.Client, imageName string, env []string) error {
+func ProvisionNewContainer(client *docker.Client, imageName string, env []string) error {
 	container, err := createContainer(client, imageName, env)
 	if err != nil {
 		return err
@@ -86,11 +87,10 @@ func provisionNewContainer(client *docker.Client, imageName string, env []string
 		return fmt.Errorf("Encounter an error when starting container: %v", err)
 	}
 	infoLogger.Println("Container started with ID:", container.ID)
-
-	return ListenContainerEvents(client, handleContainerExit(client))
+	return nil
 }
 
-func initLocalContainerClient(ce string) (*docker.Client, error) {
+func InitLocalContainerClient(ce string) (*docker.Client, error) {
 	socket := GetContainerSocketPath(ce)
 	infoLogger.Println("Container engine socket path found:", socket)
 	client, err := docker.NewClient("unix://" + socket)
@@ -156,7 +156,7 @@ var (
 
 func containerWorker() {
 	for val := range containerJobQueue {
-		err := provisionNewContainer(val.Client, val.Image, val.Env)
+		err := ProvisionNewContainer(val.Client, val.Image, val.Env)
 		if err != nil {
 			errorLogger.Println(err)
 		}
@@ -202,11 +202,6 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	infoLogger.Printf("New job queued: ID=%d", event.WorkflowJob.ID)
-	ce := sm.Config.RunnerContainerEngine
-	if ce == "" {
-		ce, err = whichContainerEngine()
-	}
-	infoLogger.Println("Container Engine:", ce)
 
 	runnerRegistrationToken, err := sm.getRunnerRegistationToken()
 	if err != nil {
@@ -251,10 +246,10 @@ func main() {
 	// Auto detect container engine
 	ce := cfg.RunnerContainerEngine
 	if ce == "" {
-		ce, _ = whichContainerEngine()
+		ce, _ = WhichContainerEngine()
 	}
 	infoLogger.Println("Container Engine:", ce)
-	containerClient, err := initLocalContainerClient(ce)
+	containerClient, err := InitLocalContainerClient(ce)
 	if err != nil {
 		errorLogger.Fatal(err)
 	}
@@ -278,6 +273,9 @@ func main() {
 	for range maxConcurrentContainers {
 		go containerWorker()
 	}
+
+	// Listening to container events
+	ListenContainerEvents(containerClient, handleContainerExit(containerClient))
 
 	if os.Getenv("PORT") != "" {
 		if _port, err := strconv.Atoi(os.Getenv("PORT")); err == nil {
