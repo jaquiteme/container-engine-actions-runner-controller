@@ -18,7 +18,7 @@ type Config struct {
 //
 // It populates the following Config fields from environment variables:
 //   - RunnerRepoPath:          GH_RUNNER_REPO_PATH (required)
-//   - RunnerRegistrationToken: GH_RUNNER_TOKEN (required)
+//   - RunnerRepoAccessToken: GH_RUNNER_REPO_ACCESS_TOKEN (required)
 //   - RunnerContainerImage:    GH_RUNNER_CT_IMAGE (required)
 //   - RunnerContainerEngine:  CT_ENGINE (optional)
 //   - WebhookToken:            GH_WEBHOOK_SECRET (optional)

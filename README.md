@@ -20,16 +20,19 @@ CE-ARC is a lightweight solution to automatically scale and provision self-hoste
 
 ## Configuration
 
-- For now values can be provided only via environment variables.
-- Env Variables:
-    - GH_RUNNER_REPO_PATH (required)
-    - GH_RUNNER_TOKEN (required)
-    - GH_RUNNER_CT_IMAGE (required)
-    - CT_RUNTIME (optional)
-    -  GH_WEBHOOK_SECRET (optional)
+⚠️ For now values can be provided only via environment variables.
+
+- Environnment variables:
+
+| Name              | Description                           |
+|-------------------|---------------------------------------|
+|GH_RUNNER_REPO_PATH (required)| Your target GitHub repo path (Ex: name/project)|
+|GH_RUNNER_REPO_ACCESS_TOKEN| Target repo path access token with repo scopes as mentionned in https://docs.github.com/en/actions/reference/runners/self-hosted-runners#authentication-requirements|
+|GH_RUNNER_CT_IMAGE (required)| Your runner container image (Ex: localhost/gh-runner:latest, docker.io/202047/ce-arc-server:latest) |
+|CT_ENGINE (optional)| podman or docker, if you want to force the container ngine to use|
+|GH_WEBHOOK_SECRET (optional)| Your webhook secret when setting up the webhook on GitHub|
 
 ## TODO
 
-- Write a Makefile to automate installation
 - Check idle jobs on GitHub
 - Collect runners logs
