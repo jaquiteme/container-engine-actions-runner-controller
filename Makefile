@@ -1,5 +1,5 @@
 # Binary filename
-BINARY_FILE=gh-runner
+BINARY_FILE=ce-arc-server
 # Binary directory
 BIN_DIR=bin
 
