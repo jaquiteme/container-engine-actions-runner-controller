@@ -4,23 +4,23 @@ A lightweight autoscaling self‑hosted GitHub runners with podman or docker
 
 # About
 
-CE-ARC is a lightweight solution to automatically scale and provision self-hosted GitHub Actions runners based on queued jobs. This repository provides a server written in Go that listen to GitHub workflow Webhook events, register runners to a GitHub organization or repository, and a Dockerfile to build GitHub runners containers image.
+CE-ARC is a lightweight solution to automatically scale and provision self-hosted GitHub Actions runners based on queued jobs. This repository provides a server written in Go that listen to GitHub workflow Webhook events, register runners to a GitHub organization or private repository, and scripts to build GitHub runners containers image.
 
 ## Why this project
 
-- I build this tool to serve my own purposes, primarly because I mainly use GiHub Saas and need a simple solution to run jobs that require a deployment or to access my home-lab infrastructure. But its also can fit small teams and individuals who has similar needs.
+- I developed this tool for my personal needs, mainly because I use GitHub to collaborate on private projects and require an easy way to execute jobs that involve deployments or access to my home lab infrastructure. However, it is also suitable for small teams and individuals with comparable requirements.
 
-- But also running your self-hosted runner could reduce CI wait time by adding runners when workflows queue.
+- Additionally, using a self-hosted runner might shorten CI wait durations by adding runners during queued workflows.
 
 ## Core components
 
-- A server configure once and listen to GitHub webhook, check events integrity and automatically provision and register runners as needed.
+- A server configured once to listen to GitHub webhooks, check event integrity, and automatically provision and register runners as needed.
 
 ## Quickstart (example)
 
 ## Configuration
 
-⚠️ For now values can be provided only via environment variables.
+⚠️ For now, values can be provided only via environment variables.
 
 - Environnment variables:
 
