@@ -6,7 +6,6 @@ on:
       - "v*" # Ex: v1.0.0, v1.0, etc.
 
 env:
-  CT_REGISTRY: "docker"
   BINARY_FILENAME: "ce-arc-server"
   PACKAGES_DIR: "./server"
   GO_VERSION: "1.25.4"
@@ -32,7 +31,7 @@ jobs:
         id: build-image
         uses: redhat-actions/buildah-build@v2
         with:
-          image: "${{ secrets.CT_REGISTRY_USERNAME }}/${{ env.BINARY_FILENAME }}"
+          image: "${{ secrets.CT_REGISTRY_USERNAME }}/gh-runner"
           tags: "latest ${{ steps.set-tag.outputs.image_tag }}"
           context: ./runner
           containerfiles: |
