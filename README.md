@@ -1,6 +1,6 @@
 # Container Engine Actions Runner Controller (CE-ARC)
 
-![Go](https://img.shields.io/badge/Go-1.25-blue) ![Podman](https://img.shields.io/badge/Podman-supported-green) ![License](https://img.shields.io/github/license/jaquiteme/container-engine-actions-runner-controller)
+![Go](https://img.shields.io/badge/Go-1.25-blue) ![Podman](https://img.shields.io/badge/Podman-supported-green) ![License](https://img.shields.io/github/license/jaquiteme/container-engine-actions-runner-controller) ![build branch parameter](https://github.com/github/docs/actions/workflows/go-build.yml/badge.svg?branch=main)
 
 A lightweight autoscaling self‑hosted GitHub Actions runner controller using Podman or Docker.
 
