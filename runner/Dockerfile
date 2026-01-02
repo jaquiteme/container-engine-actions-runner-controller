@@ -22,11 +22,14 @@ RUN apt-get update -y \
     tar \
     sudo \
     git \
+    jq \
     iproute2 \
     iptables \
     ca-certificates \
-    fuse-overlayfs \
+    software-properties-common \
     uidmap \
+    unzip \
+    zip \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /tmp/*
 
@@ -40,7 +43,6 @@ RUN adduser --disabled-password --gecos "" --uid $GH_RUNNER_USER_UID gh-runner \
     && echo "Defaults env_keep += \"DEBIAN_FRONTEND\"" >> /etc/sudoers
 
 ENV HOME=/actions-runner
-
 
 # Download github self-hosted runner code
 RUN curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v${GH_RUNNER_VERSION}/actions-runner-linux-x64-${GH_RUNNER_VERSION}.tar.gz \
