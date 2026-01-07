@@ -5,15 +5,24 @@
 
 set -e
 
-IMAGE_NAME="${1:-gh-runner:latest}"
+IMAGE_NAME="${1:-gh-runner}"
+IMAGE_VERSION="${2:-latest}"
 # We will prefer using podman as its support rootless by default
-CT_RUNTIME="${2:-podman}"
+CT_RUNTIME="${3:-podman}"
+
+# Build a container image using podman
+function build_podman_image() {
+  local image_name="$1"
+  local container_file="$2"
+  podman build  -t "${image_name}" -f "${container_file}"
+}
 
 echo "====== Build Runner Image ======"
 
 if command -v podman &> /dev/null && test "${CT_RUNTIME}" = "podman"; then
     echo "=> Using Podman"
-    podman build -t "${IMAGE_NAME}" -f runner/Dockerfile
+
+    build_podman_image "${IMAGE_NAME}:${IMAGE_VERSION}" "runner/runner-podman-ubuntu.containerfile"
     podman image list --filter reference="${IMAGE_NAME}"
 elif command -v docker &> /dev/null && test "${CT_RUNTIME}" == "docker"; then
     echo "=> Using Docker"

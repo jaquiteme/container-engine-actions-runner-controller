@@ -126,6 +126,9 @@ func CreateContainer(client *docker.Client, imageName string, env []string) (*do
 				"platform": "github",
 			},
 		},
+		HostConfig: &docker.HostConfig{
+			CapAdd: []string{"all"},
+		},
 	}
 	container, err := client.CreateContainer(opts)
 	if err != nil {

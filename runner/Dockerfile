@@ -6,13 +6,15 @@
 # This file is based on the original Dockerfile from:
 # https://github.com/actions/actions-runner-controller/blob/master/runner/actions-runner-dind-rootless.ubuntu-22.04.dockerfile
 
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 ARG GH_RUNNER_VERSION="2.329.0"
 ARG GH_RUNNER_USER_UID=1001
 
-# Install prerequisites packages for the runner
+# Prevent interactive prompt
 ENV DEBIAN_FRONTEND=noninteractive
+
+# Install prerequisites packages for the runner
 RUN apt-get update -y \
     && apt-get install -y software-properties-common \
     && add-apt-repository -y ppa:git-core/ppa \
@@ -32,6 +34,10 @@ RUN apt-get update -y \
     zip \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf /tmp/*
+
+# Download latest git-lfs version
+RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.deb.sh | bash && \
+    apt-get install -y --no-install-recommends git-lfs
 
 WORKDIR /actions-runner
 
