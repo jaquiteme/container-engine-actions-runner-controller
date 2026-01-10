@@ -1,6 +1,6 @@
 FROM ubuntu:24.04
 
-ARG GH_RUNNER_VERSION="2.331.0"
+ARG GH_RUNNER_VERSION="2.329.0"
 ARG GH_RUNNER_USER_UID=1001
 ARG GH_RUNNER_USER_NAME="gh-runner"
 
@@ -39,16 +39,14 @@ RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.d
 
 # Add runner user
 RUN adduser --disabled-password --gecos "" --uid $GH_RUNNER_USER_UID $GH_RUNNER_USER_NAME \
-    && chown $GH_RUNNER_USER_NAME:$GH_RUNNER_USER_NAME -R /home/$GH_RUNNER_USER_NAME \
     && usermod -aG sudo $GH_RUNNER_USER_NAME \
     && echo "%sudo   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers \
     && echo "Defaults env_keep += \"DEBIAN_FRONTEND\"" >> /etc/sudoers; \
     echo $GH_RUNNER_USER_NAME:1002:64535 > /etc/subuid; \
     echo $GH_RUNNER_USER_NAME:1002:64535 > /etc/subgid;
 
-
-RUN mkdir -p /home/$GH_RUNNER_USER_NAME/.local/share/containers \
-    && chown $GH_RUNNER_USER_NAME:$GH_RUNNER_USER_NAME -R /home/$GH_RUNNER_USER_NAME/.local
+RUN mkdir -p /home/$GH_RUNNER_USER_NAME/.local/share/containers && \
+    chown $GH_RUNNER_USER_NAME:$GH_RUNNER_USER_NAME -R /home/$GH_RUNNER_USER_NAME/.local
 # /var/lib/containers => for podman rootful
 # /home/$GH_RUNNER_USER_NAME/.local/share/containers => for podman rootless
 VOLUME /var/lib/containers
@@ -58,6 +56,8 @@ VOLUME /home/$GH_RUNNER_USER_NAME/.local/share/containers
 ADD https://raw.githubusercontent.com/containers/image_build/refs/heads/main/podman/containers.conf /etc/containers/containers.conf
 ADD https://raw.githubusercontent.com/containers/image_build/refs/heads/main/podman/podman-containers.conf /home/$GH_RUNNER_USER_NAME/.config/containers/containers.conf
 
+RUN chown $GH_RUNNER_USER_NAME:$GH_RUNNER_USER_NAME -R /home/$GH_RUNNER_USER_NAME
+
 # Configure Podman rootful storage
 RUN mkdir -p /etc/containers && \
     printf "[storage]\ndriver=\"overlay\"\n" > /etc/containers/storage.conf
@@ -66,7 +66,6 @@ RUN mkdir -p /etc/containers && \
 RUN ln -s /usr/bin/podman /usr/local/bin/docker
 
 ENV _CONTAINERS_USERNS_CONFIGURED=""
-
 ENV HOME=/home/$GH_RUNNER_USER_NAME
 
 WORKDIR /home/$GH_RUNNER_USER_NAME
