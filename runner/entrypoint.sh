@@ -25,13 +25,14 @@ config_runner() {
     --token "${GH_RUNNER_TOKEN}" \
     --ephemeral \
     --unattended \
+    --disableupdate \
     --replace
 }
 
 # Start runner
 start_runner() {
   echo "Starting self hosted runner..."
-  ./run.sh --disableupdate
+  ./run.sh
 }
 
 config_runner

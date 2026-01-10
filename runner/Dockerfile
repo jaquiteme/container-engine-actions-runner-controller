@@ -8,7 +8,7 @@
 
 FROM ubuntu:24.04
 
-ARG GH_RUNNER_VERSION="2.329.0"
+ARG GH_RUNNER_VERSION="2.331.0"
 ARG GH_RUNNER_USER_UID=1001
 
 # Prevent interactive prompt
