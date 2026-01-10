@@ -70,7 +70,7 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 	go func() {
 		for ev := range events {
 			infoLogger.Printf("Event received: %s on container %s", ev.Status, GetContainerShortID(ev.ID))
-			if ev.Status == "die" {
+			if ev.Status == "die" && os.Getenv("LOG_LEVEL") != "debug" {
 				// exitCode => docker, containerExitCode => podman
 				exitCode := ev.Actor.Attributes["containerExitCode"]
 				if exitCode == "" {
@@ -249,7 +249,7 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 
 // Pull a container image from a registry
 func PullContainerImage(client *docker.Client, imageName string) (bool, error) {
-	infoLogger.Printf("Attempting to pull container image %s.", imageName)
+	infoLogger.Printf("Trying to pull container image %s.", imageName)
 	// Split image name parts
 	parts := strings.Split(imageName, ":")
 	if len(parts) != 2 {
