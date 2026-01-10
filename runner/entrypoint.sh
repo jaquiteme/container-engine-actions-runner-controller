@@ -31,7 +31,7 @@ config_runner() {
 # Start runner
 start_runner() {
   echo "Starting self hosted runner..."
-  ./run.sh
+  ./run.sh --disableupdate
 }
 
 config_runner
