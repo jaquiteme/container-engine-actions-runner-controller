@@ -247,21 +247,13 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	w.Write([]byte(`{}`))
 }
 
-// containerImageExists check if a container image exists
-func IsContainerImageExists(client *docker.Client, imageName string) (bool, error) {
-	// Check if image exists locally
-	if _, err := client.InspectImage(imageName); err == nil {
-		infoLogger.Printf("Container image %s found.", imageName)
-		return true, nil
-	}
-
-	// Try to pull image from registry
+// Pull a container image from a registry
+func PullContainerImage(client *docker.Client, imageName string) (bool, error) {
+	// Split image name parts
 	parts := strings.Split(imageName, ":")
 	if len(parts) != 2 {
 		return false, fmt.Errorf("invalid image name format: %s (expected repo:tag)", imageName)
 	}
-
-	warningLogger.Printf("Container image %s not found locally, attempting to pull", imageName)
 
 	if err := client.PullImage(docker.PullImageOptions{
 		Repository: parts[0],
@@ -295,7 +287,7 @@ func main() {
 	}
 	// Check if container image exists so the server fail fast
 	// when image not found
-	imageExists, err := IsContainerImageExists(containerClient, cfg.RunnerContainerImage)
+	imageExists, err := PullContainerImage(containerClient, cfg.RunnerContainerImage)
 	if !imageExists {
 		errorLogger.Fatal(err)
 	}
