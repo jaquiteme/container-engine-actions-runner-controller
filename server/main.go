@@ -249,6 +249,7 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 
 // Pull a container image from a registry
 func PullContainerImage(client *docker.Client, imageName string) (bool, error) {
+	infoLogger.Printf("Attempting to pull container image %s.", imageName)
 	// Split image name parts
 	parts := strings.Split(imageName, ":")
 	if len(parts) != 2 {

@@ -35,7 +35,7 @@ jobs:
           tags: "latest ${{ steps.set-tag.outputs.image_tag }}"
           context: ./runner
           containerfiles: |
-            ./runner/Dockerfile
+            ./runner/runner-podman-ubuntu.containerfile
 
       - name: "Push to the container registry"
         id: "push-to-registry"
