@@ -184,6 +184,33 @@ func containerWorker() {
 	}
 }
 
+// Test provisioning and set container label
+// delete container using label
+
+// Provision a new container runner
+func ProvisionNewRunner(sm *ServerConfigManager) {
+	runnerRegistrationToken, err := sm.getRunnerRegistationToken()
+	if err != nil {
+		errorLogger.Fatalln(err)
+		return
+	}
+
+	select {
+	case containerJobQueue <- ContainerOpts{
+		Client: sm.ContainerClient,
+		Image:  sm.Config.RunnerContainerImage,
+		Env: []string{
+			"REPO_URL=https://github.com/" + sm.Config.RunnerRepoPath,
+			"RUNNER_TOKEN=" + runnerRegistrationToken,
+			"DISABLE_AUTO_UPDATE=true",
+			"EPHEMERAL=true",
+		}}:
+		infoLogger.Println("Job added to container creation queue")
+	default:
+		warningLogger.Println("Container creation queue is full, dropping job")
+	}
+}
+
 // Webhook endpoint handler
 func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
@@ -224,24 +251,7 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 
 	infoLogger.Printf("New job queued: ID=%d", event.WorkflowJob.ID)
 
-	runnerRegistrationToken, err := sm.getRunnerRegistationToken()
-	if err != nil {
-		errorLogger.Fatalln(err)
-		return
-	}
-
-	select {
-	case containerJobQueue <- ContainerOpts{
-		Client: sm.ContainerClient,
-		Image:  sm.Config.RunnerContainerImage,
-		Env: []string{
-			"GH_RUNNER_REPO_PATH=" + sm.Config.RunnerRepoPath,
-			"GH_RUNNER_TOKEN=" + runnerRegistrationToken,
-		}}:
-		infoLogger.Println("Job added to container creation queue")
-	default:
-		warningLogger.Println("Container creation queue is full, dropping job")
-	}
+	ProvisionNewRunner(sm)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{}`))
@@ -308,8 +318,13 @@ func main() {
 	for range maxConcurrentContainers {
 		go containerWorker()
 	}
+
 	// Listening to container events
 	ListenContainerEvents(containerClient, handleContainerExit(containerClient))
+
+	// Test provision
+	infoLogger.Println("Trying to provision a runner")
+	ProvisionNewRunner(manager)
 
 	if os.Getenv("PORT") != "" {
 		if _port, err := strconv.Atoi(os.Getenv("PORT")); err == nil {
