@@ -22,7 +22,8 @@ echo "====== Build Runner Image ======"
 if command -v podman &> /dev/null && test "${CT_RUNTIME}" = "podman"; then
     echo "=> Using Podman"
 
-    build_podman_image "${IMAGE_NAME}:${IMAGE_VERSION}" "runner/runner-podman-ubuntu.containerfile"
+    build_podman_image "${IMAGE_NAME}:${IMAGE_VERSION}" "runner/runner-ubuntu.containerfile"
+    build_podman_image "${IMAGE_NAME}-podman:${IMAGE_VERSION}" "runner/runner-podman-ubuntu.containerfile"
     podman image list --filter reference="${IMAGE_NAME}"
 elif command -v docker &> /dev/null && test "${CT_RUNTIME}" == "docker"; then
     echo "=> Using Docker"

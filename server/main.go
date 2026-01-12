@@ -266,6 +266,11 @@ func PullContainerImage(client *docker.Client, imageName string) (bool, error) {
 		return false, fmt.Errorf("invalid image name format: %s (expected repo:tag)", imageName)
 	}
 
+	if strings.HasPrefix(parts[0], "localhost") {
+		warningLogger.Printf("Container image %s cannot be pulled from remote as it is on localhost.", imageName)
+		return true, nil
+	}
+
 	if err := client.PullImage(docker.PullImageOptions{
 		Repository: parts[0],
 		Tag:        parts[1],

@@ -1,32 +1,49 @@
 #!/bin/bash
+# Description: runner entrypoint
+
 set -e
 
-ARG="$1"
-shift || true
+source logger.sh
 
 # Config a runner
 config_runner() {
-   if [ -z "${GH_RUNNER_REPO_PATH}" ]; then
-    echo "[Error]: seems like GH_RUNNER_REPO_PATH env var is empty. This value is required"
+   if [ -z "${REPO_URL}" ]; then
+    log.error "Seems like REPO_URL env var is empty. This value is required"
     exit 1
   fi
 
-  GH_RUNNER_REPO="https://github.com/${GH_RUNNER_REPO_PATH}"
-
-  if [ -z "${GH_RUNNER_TOKEN}" ]; then
-    echo "[Error]: seems like GH_RUNNER_TOKEN env var is empty. This value is required"
+  if [ -z "${RUNNER_TOKEN}" ]; then
+    log.error "Seems like RUNNER_TOKEN env var is empty. This value is required"
     exit 1
   fi
 
-  echo "Registering to projet at ${GH_RUNNER_REPO}..."
+  log.debug "Registering runner to ${REPO_URL}..."
 
-  ./config.sh \
-    --url "${GH_RUNNER_REPO}" \
-    --token "${GH_RUNNER_TOKEN}" \
-    --ephemeral \
-    --unattended \
-    --disableupdate \
-    --replace
+  retries_left=5
+
+  while [[ ${retries_left} -gt 0 ]]; do
+    ./config.sh \
+      --url "${REPO_URL}" \
+      --token "${RUNNER_TOKEN}" \
+      --ephemeral \
+      --unattended \
+      --disableupdate \
+      --
+
+    if [ -f .runner ]; then
+      log.debug "Runner successfully configured."
+      break
+    fi
+      log.error "Failed to configure runner. Retrying"
+      retries_left=$((retries_left - 1))
+      sleep 1
+  done
+
+  if [ ! -f .runner ]; then
+      log.error "Failed to configure runner."
+      exit 2
+  fi
+
 }
 
 # Start runner

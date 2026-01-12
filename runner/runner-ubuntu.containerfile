@@ -41,21 +41,13 @@ RUN adduser --disabled-password --gecos "" --uid $GH_RUNNER_USER_UID $GH_RUNNER_
     && echo "%sudo   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers \
     && echo "Defaults env_keep += \"DEBIAN_FRONTEND\"" >> /etc/sudoers
 
-# Setup uidmap for podman
-RUN echo $GH_RUNNER_USER_NAME:1002:64535 > /etc/subuid; \
-    echo $GH_RUNNER_USER_NAME:1002:64535 > /etc/subgid;
-
 ENV HOME=/home/$GH_RUNNER_USER_NAME
 
 # Copy custom scripts
 COPY entrypoint.sh \
     scripts/install_runner.sh \
-    scripts/install_podman.sh \
     scripts/logger.sh \
     scripts/utils.sh /usr/bin/
-
-# Install podman
-RUN chmod +x /usr/bin/install_podman.sh && /usr/bin/install_podman.sh ${GH_RUNNER_USER_NAME}
 
 ENV _CONTAINERS_USERNS_CONFIGURED=""
 
