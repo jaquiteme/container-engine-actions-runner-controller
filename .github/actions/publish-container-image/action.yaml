@@ -1,0 +1,49 @@
+name: "Publish Container Image"
+description: "Publish a container image to a registry"
+inputs:
+    registry:
+        description: "Container registry"
+        default: docker.io
+    username:
+        description: "Registry user"
+        required: true
+    password:
+        description: "Registry password"
+        required: true
+    namespace:
+        description: Container image namespace
+        default: ""
+    image_name:
+        description: Container image name
+        required: true
+    image_tags:
+        description: Container image tags seperate with space like latest 1.0.0
+        required: true
+    context:
+        description: Containerfile HOME
+        default: .
+    containerfile:
+        description: Path to containerfile or dockerfile
+
+runs:
+    using: composite
+
+    steps:
+        - name: Build image
+          id: build-image
+          uses: redhat-actions/buildah-build@v2
+          with:
+              image: "${{ inputs.namespace != '' && inputs.namespace || inputs.username }}/${{ inputs.image_name }}"
+              tags: "${{ inputs.image_tag }}"
+              context: ${{ inputs.context }}
+              containerfiles: ${{ inputs.containerfile }}
+
+        - name: "Push to the container registry"
+          id: "push-to-registry"
+          uses: redhat-actions/push-to-registry@v2
+          with:
+              image: "${{ steps.build-image.outputs.image }}"
+              tags: "latest ${{ steps.build-image.outputs.tags }}"
+              registry: ${{ inputs.registry }}
+              username: ${{ inputs.username }}
+              password: ${{ inputs.password }}
