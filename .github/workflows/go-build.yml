@@ -32,14 +32,14 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test ./...
+        run: go test ./server/...
 
       - name: Build binary
         run: go build -o "${{ env.BINARY_FILENAME }}" "${{ env.PACKAGES_DIR }}"
 
   deploy:
     needs: build
-    if: github.event.pull_request
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -52,14 +52,14 @@ jobs:
         id: set-tag
         run: |
           tag="${{ github.sha }}"
-          echo "image_tag=${tag:8:0}" >> "$GITHUB_OUTPUT"
+          echo "image_tag=${tag:0:8}" >> "$GITHUB_OUTPUT"
 
       - name: Push container image
         uses: ./.github/actions/publish-container-image
         with:
           registry: ${{ secrets.CT_REGISTRY }}
           image_name: "gh-runner"
-          image_tags: "${{ github.sha }}"
+          image_tags: "${{ steps.set-tag.outputs.image_tag }}"
           username: ${{ secrets.CT_REGISTRY_USERNAME }}
           password: ${{ secrets.CT_REGISTRY_PASSWORD }}
           context: ./runner

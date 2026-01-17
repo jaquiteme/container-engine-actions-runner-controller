@@ -29,12 +29,22 @@ runs:
     using: composite
 
     steps:
+        - name: Install buildah if not exists
+          shell: bash
+          run: |
+            if ! command -v buildah &> /dev/null
+            then
+                echo "Buildah not found, installing..."
+                sudo apt-get update
+                sudo apt-get -y install buildah
+            fi
+
         - name: Build image
           id: build-image
           uses: redhat-actions/buildah-build@v2
           with:
-              image: "${{ inputs.namespace != '' && inputs.namespace || inputs.username }}/${{ inputs.image_name }}"
-              tags: "${{ inputs.image_tag }}"
+              image: ${{ inputs.namespace != '' && inputs.namespace || inputs.username }}/${{ inputs.image_name }}
+              tags: ${{ inputs.image_tags }}
               context: ${{ inputs.context }}
               containerfiles: ${{ inputs.containerfile }}
 
@@ -43,7 +53,7 @@ runs:
           uses: redhat-actions/push-to-registry@v2
           with:
               image: "${{ steps.build-image.outputs.image }}"
-              tags: "latest ${{ steps.build-image.outputs.tags }}"
+              tags: "${{ steps.build-image.outputs.tags }}"
               registry: ${{ inputs.registry }}
               username: ${{ inputs.username }}
               password: ${{ inputs.password }}
