@@ -53,7 +53,7 @@ runs:
           uses: redhat-actions/push-to-registry@v2
           with:
               image: "${{ steps.build-image.outputs.image }}"
-              tags: "latest ${{ steps.build-image.outputs.tags }}"
+              tags: "${{ steps.build-image.outputs.tags }}"
               registry: ${{ inputs.registry }}
               username: ${{ inputs.username }}
               password: ${{ inputs.password }}
