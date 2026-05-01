@@ -220,17 +220,13 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	signature := r.Header.Get("X-Hub-Signature-256")
 	secret := sm.Config.WebhookToken
 
-	if secret != "" {
-		if signature == "" {
-			http.Error(w, "missing signature", http.StatusUnauthorized)
-			return
-		}
-		if !isValidSignature(body, signature, secret) {
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
-			return
-		}
-	} else if signature != "" {
-		warningLogger.Println("Webhook secret is not set; skipping signature validation")
+	if signature == "" {
+		http.Error(w, "missing signature", http.StatusUnauthorized)
+		return
+	}
+	if !isValidSignature(body, signature, secret) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
 	}
 
 	var event WorkflowJobEvent

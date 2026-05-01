@@ -57,6 +57,7 @@ func TestReadConfig_OptionalFields(t *testing.T) {
 	t.Setenv("GH_RUNNER_REPO_PATH", "/path/to/repo")
 	t.Setenv("GH_RUNNER_REPO_ACCESS_TOKEN", "ghtoken123")
 	t.Setenv("GH_RUNNER_CT_IMAGE", "image:latest")
+	t.Setenv("GH_WEBHOOK_SECRET", "webhook<S3cr3t123")
 
 	cfg, err := ReadConfig()
 	if err != nil {
@@ -65,7 +66,15 @@ func TestReadConfig_OptionalFields(t *testing.T) {
 	if cfg.RunnerContainerEngine != "" {
 		t.Errorf("expected empty engine, got %s", cfg.RunnerContainerEngine)
 	}
-	if cfg.WebhookToken != "" {
-		t.Errorf("expected empty webhook token, got %s", cfg.WebhookToken)
+}
+
+func TestReadConfig_MissingWebhookSecret(t *testing.T) {
+	t.Setenv("GH_RUNNER_REPO_PATH", "/path/to/repo")
+	t.Setenv("GH_RUNNER_REPO_ACCESS_TOKEN", "ghtoken123")
+	t.Setenv("GH_RUNNER_CT_IMAGE", "image:latest")
+
+	_, err := ReadConfig()
+	if err == nil {
+		t.Fatal("expected error for missing GH_WEBHOOK_SECRET")
 	}
 }
