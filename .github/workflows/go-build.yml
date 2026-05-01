@@ -8,6 +8,10 @@ on:
     branches:
       - main
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   BINARY_FILENAME: "ce-arc-server"
   PACKAGES_DIR: "./server"
@@ -28,9 +32,6 @@ jobs:
         with:
           go-version: "${{ env.GO_VERSION }}"
 
-      - name: Download dependencies
-        run: go mod download
-
       - name: Run tests
         run: go test ./server/...
 
@@ -47,7 +48,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # This step is used to set an image tag variable
       - name: Set image tag version
         id: set-tag
         run: |
