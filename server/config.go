@@ -13,22 +13,9 @@ type Config struct {
 	WebhookToken          string
 }
 
-// readConfig reads configuration values from environment variables and
-// constructs a Config value.
-//
-// It populates the following Config fields from environment variables:
-//   - RunnerRepoPath:          GH_RUNNER_REPO_PATH (required)
-//   - RunnerRepoAccessToken: GH_RUNNER_REPO_ACCESS_TOKEN (required)
-//   - RunnerContainerImage:    GH_RUNNER_CT_IMAGE (required)
-//   - RunnerContainerEngine:  CT_ENGINE (optional)
-//   - WebhookToken:            GH_WEBHOOK_SECRET (optional)
-//
-// Behavior:
-//   - If RunnerRepoPath is set, its value is logged via infoLogger.
-//   - If any of the required variables (GH_RUNNER_REPO_PATH,
-//     GH_RUNNER_TOKEN, GH_RUNNER_CT_IMAGE) are missing, readConfig returns
-//     a non-nil error explaining which environment variable is required.
-//   - On success it returns the populated Config and a nil error.
+// ReadConfig reads configuration from environment variables and returns a validated Config.
+// Required: GH_RUNNER_REPO_PATH, GH_RUNNER_REPO_ACCESS_TOKEN, GH_RUNNER_CT_IMAGE.
+// Optional: CT_ENGINE, GH_WEBHOOK_SECRET.
 func ReadConfig() (*Config, error) {
 	cfg := Config{
 		RunnerRepoPath:        os.Getenv("GH_RUNNER_REPO_PATH"),
@@ -37,19 +24,19 @@ func ReadConfig() (*Config, error) {
 		RunnerContainerEngine: os.Getenv("CT_ENGINE"),
 		WebhookToken:          os.Getenv("GH_WEBHOOK_SECRET"),
 	}
-	// Check if github repo path is set; the server will exit if this variable is not set
-	if cfg.RunnerRepoPath != "" {
-		infoLogger.Println("Current server repo path:", cfg.RunnerRepoPath)
-	} else {
-		return &Config{}, fmt.Errorf("The server cannot run without env variable 'GH_RUNNER_REPO_PATH'")
+
+	if cfg.RunnerRepoPath == "" {
+		return nil, fmt.Errorf("env variable GH_RUNNER_REPO_PATH is required")
 	}
-	// Check if github runner is provided; the server will exit if this variable is not set
+	infoLogger.Println("Current server repo path:", cfg.RunnerRepoPath)
+
 	if cfg.RunnerContainerImage == "" {
-		return &Config{}, fmt.Errorf("The server cannot run without env variable 'GH_RUNNER_CT_IMAGE'")
+		return nil, fmt.Errorf("env variable GH_RUNNER_CT_IMAGE is required")
 	}
-	// Check if github runner token is provided; the server will exit if this variable is not set
+
 	if cfg.RunnerRepoAccessToken == "" {
-		return &Config{}, fmt.Errorf("The server cannot run without env variable 'GH_RUNNER_REPO_ACCESS_TOKEN'")
+		return nil, fmt.Errorf("env variable GH_RUNNER_REPO_ACCESS_TOKEN is required")
 	}
+
 	return &cfg, nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -16,13 +17,11 @@ type GHRunnerRegistrationTokenResponse struct {
 	ExpiresAt string `json:"expires_at"`
 }
 
-// GitHub Action Runners Registration Token Type
 type RunnerRegistrationToken struct {
 	Value     string
 	ExpiresAt time.Time
 }
 
-// token manager type with concurrency management
 type ServerConfigManager struct {
 	Mu              sync.Mutex
 	Token           RunnerRegistrationToken
@@ -30,43 +29,52 @@ type ServerConfigManager struct {
 	ContainerClient *docker.Client
 }
 
-// fetchNewRunnerRegistrationTokenForPrivateRepo make an API request to retrieve a runner action token
-// to registrate a self-hosted runner in a private repository
-//
-// Parameters:
-//   - repoPath: GitHub repository path (Ex: username/repo-name)
-//   - accessToken: GitHub repo access token with repo scopes as mentionned in https://docs.github.com/en/actions/reference/runners/self-hosted-runners#authentication-requirements
+// fetchNewRunnerRegistrationTokenForPrivateRepo makes an API request to retrieve a runner
+// registration token for a private repository.
 func fetchNewRunnerRegistrationTokenForPrivateRepo(repoPath string, accessToken string) (RunnerRegistrationToken, error) {
 	if repoPath == "" {
-		return RunnerRegistrationToken{}, fmt.Errorf("Please provide value for repoPath")
+		return RunnerRegistrationToken{}, fmt.Errorf("repoPath is required")
 	}
 	if accessToken == "" {
-		return RunnerRegistrationToken{}, fmt.Errorf("Please provide value for accessToken")
+		return RunnerRegistrationToken{}, fmt.Errorf("accessToken is required")
 	}
 
 	url := "https://api.github.com/repos/" + repoPath + "/actions/runners/registration-token"
-	req, err := http.NewRequest(http.MethodPost, url, nil)
-	req.Header.Add("Authorization", "Bearer "+accessToken)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, nil)
 	if err != nil {
-		return RunnerRegistrationToken{}, fmt.Errorf("Encounter error when preparing request %s failed with : %v", url, err)
+		return RunnerRegistrationToken{}, fmt.Errorf("failed to prepare request %s: %v", url, err)
 	}
+	req.Header.Add("Authorization", "Bearer "+accessToken)
+	req.Header.Add("Accept", "application/vnd.github+json")
+	req.Header.Add("X-GitHub-Api-Version", "2022-11-28")
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return RunnerRegistrationToken{}, fmt.Errorf("Request %s failed with : %v", url, err)
+		return RunnerRegistrationToken{}, fmt.Errorf("request %s failed: %v", url, err)
 	}
 	defer res.Body.Close()
+
 	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		return RunnerRegistrationToken{}, fmt.Errorf("failed to read response body from %s: %v", url, err)
+	}
+
+	if res.StatusCode != http.StatusCreated {
+		return RunnerRegistrationToken{}, fmt.Errorf("unexpected status %d from %s: %s", res.StatusCode, url, string(body))
+	}
 
 	var tokenRes GHRunnerRegistrationTokenResponse
 	if err := json.Unmarshal(body, &tokenRes); err != nil {
-		return RunnerRegistrationToken{}, fmt.Errorf("Encounter error when unmashalling %s response body with : %v", url, err)
+		return RunnerRegistrationToken{}, fmt.Errorf("failed to unmarshal response from %s: %v", url, err)
 	}
 
-	timeLayout := "2006-01-02T15:04:05.000-07:00"
-	expiresAt, err := time.Parse(timeLayout, tokenRes.ExpiresAt)
+	expiresAt, err := time.Parse(time.RFC3339Nano, tokenRes.ExpiresAt)
 	if err != nil {
-		return RunnerRegistrationToken{}, fmt.Errorf("Encounter error when parsing token expires date %s response body with : %v", tokenRes.ExpiresAt, err)
+		return RunnerRegistrationToken{}, fmt.Errorf("failed to parse token expiry %q: %v", tokenRes.ExpiresAt, err)
 	}
 
 	return RunnerRegistrationToken{
@@ -75,7 +83,7 @@ func fetchNewRunnerRegistrationTokenForPrivateRepo(repoPath string, accessToken 
 	}, nil
 }
 
-// getRunnerRegistationToken get runner token from memory
+// getRunnerRegistationToken returns a valid runner token, refreshing it when expired or near expiry.
 func (tm *ServerConfigManager) getRunnerRegistationToken() (string, error) {
 	tm.Mu.Lock()
 	defer tm.Mu.Unlock()
@@ -83,10 +91,10 @@ func (tm *ServerConfigManager) getRunnerRegistationToken() (string, error) {
 	if tm.Token.Value == "" || time.Until(tm.Token.ExpiresAt) < 5*time.Minute {
 		token, err := fetchNewRunnerRegistrationTokenForPrivateRepo(tm.Config.RunnerRepoPath, tm.Config.RunnerRepoAccessToken)
 		if err != nil {
-			return "", fmt.Errorf("Unable to fetch new runner registration token: %v", err)
+			return "", fmt.Errorf("unable to fetch new runner registration token: %v", err)
 		}
 		tm.Token = token
-		infoLogger.Println("Successfuly fetched runner registration token.")
+		infoLogger.Println("Successfully fetched runner registration token.")
 		return token.Value, nil
 	}
 
