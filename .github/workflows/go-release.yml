@@ -20,32 +20,22 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # This step is used to set an image tag variable
       - name: Set image tag version
         id: set-tag
         run: |
           tag="${{ github.ref_name }}"
           echo "image_tag=${tag:1}" >> "$GITHUB_OUTPUT"
 
-      - name: Build image
-        id: build-image
-        uses: redhat-actions/buildah-build@v2
+      - name: Push container image
+        uses: ./.github/actions/publish-container-image
         with:
-          image: "${{ secrets.CT_REGISTRY_USERNAME }}/gh-runner"
-          tags: "latest ${{ steps.set-tag.outputs.image_tag }}"
-          context: ./runner
-          containerfiles: |
-            ./runner/runner-podman-ubuntu.containerfile
-
-      - name: "Push to the container registry"
-        id: "push-to-registry"
-        uses: redhat-actions/push-to-registry@v2
-        with:
-          image: "${{ steps.build-image.outputs.image }}"
-          tags: "latest ${{ steps.build-image.outputs.tags }}"
           registry: ${{ secrets.CT_REGISTRY }}
+          image_name: "gh-runner"
+          image_tags: "latest ${{ steps.set-tag.outputs.image_tag }}"
           username: ${{ secrets.CT_REGISTRY_USERNAME }}
           password: ${{ secrets.CT_REGISTRY_PASSWORD }}
+          context: ./runner
+          containerfile: ./runner/runner-podman-ubuntu.containerfile
 
   release-bin:
     runs-on: ubuntu-latest
@@ -61,14 +51,11 @@ jobs:
         with:
           go-version: "${{ env.GO_VERSION }}"
 
-      - name: Download dependencies
-        run: go mod download
-
       - name: Cross-compile binaries
         run: |
-          BINARY_NAME=${{ env.BINARY_FILENAME }}
-          VERSION=${{ github.ref_name }}
-          PACKAGES_DIR=${{ env.PACKAGES_DIR }}
+          BINARY_NAME="${{ env.BINARY_FILENAME }}"
+          VERSION="${{ github.ref_name }}"
+          PACKAGES_DIR="${{ env.PACKAGES_DIR }}"
           mkdir -p dist
           GOOS=linux   GOARCH=amd64 go build -o dist/${BINARY_NAME}-${VERSION}-linux-amd64 "${PACKAGES_DIR}"
           GOOS=linux   GOARCH=arm64 go build -o dist/${BINARY_NAME}-${VERSION}-linux-arm64 "${PACKAGES_DIR}"

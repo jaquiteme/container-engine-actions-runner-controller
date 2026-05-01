@@ -17,13 +17,14 @@ inputs:
         description: Container image name
         required: true
     image_tags:
-        description: Container image tags seperate with space like latest 1.0.0
+        description: Container image tags separated with space like latest 1.0.0
         required: true
     context:
-        description: Containerfile HOME
+        description: Build context directory
         default: .
     containerfile:
         description: Path to containerfile or dockerfile
+        required: true
 
 runs:
     using: composite

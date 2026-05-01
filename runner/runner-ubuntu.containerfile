@@ -38,14 +38,13 @@ RUN curl -s https://packagecloud.io/install/repositories/github/git-lfs/script.d
 # Create runner user and setup sudo
 RUN adduser --disabled-password --gecos "" --uid $GH_RUNNER_USER_UID $GH_RUNNER_USER_NAME \
     && usermod -aG sudo $GH_RUNNER_USER_NAME \
-    && echo "%sudo   ALL=(ALL:ALL) NOPASSWD:ALL" > /etc/sudoers \
-    && echo "Defaults env_keep += \"DEBIAN_FRONTEND\"" >> /etc/sudoers
+    && printf '%s\n' '%sudo ALL=(ALL:ALL) NOPASSWD:ALL' 'Defaults env_keep += "DEBIAN_FRONTEND"' > /etc/sudoers.d/gh-runner \
+    && chmod 440 /etc/sudoers.d/gh-runner
 
 ENV HOME=/home/$GH_RUNNER_USER_NAME
 
 # Copy custom scripts
-COPY entrypoint.sh \
-    scripts/install_runner.sh \
+COPY scripts/install_runner.sh \
     scripts/logger.sh \
     scripts/utils.sh /usr/bin/
 
@@ -57,7 +56,7 @@ WORKDIR /home/$GH_RUNNER_USER_NAME
 RUN chmod +x /usr/bin/install_runner.sh \
     && /usr/bin/install_runner.sh ${GH_RUNNER_VERSION} ${TARGETPLATFORM}
 
-COPY entrypoint.sh /usr/bin/
+COPY entrypoint.sh /usr/bin/entrypoint.sh
 RUN chmod +x /usr/bin/entrypoint.sh
 
 USER $GH_RUNNER_USER_NAME

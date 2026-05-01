@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -9,13 +10,15 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 
 	docker "github.com/fsouza/go-dockerclient"
 )
 
-// Github Workflow Event Type
 type WorkflowJobEvent struct {
 	Action      string `json:"action"`
 	WorkflowJob struct {
@@ -23,7 +26,7 @@ type WorkflowJobEvent struct {
 	} `json:"workflow_job"`
 }
 
-// Autodect container engine execution installed on a host
+// WhichContainerEngine auto-detects the container engine available on the host.
 func WhichContainerEngine() (string, error) {
 	if _, err := os.Stat("/run/podman/podman.sock"); err == nil {
 		return "podman", nil
@@ -31,11 +34,10 @@ func WhichContainerEngine() (string, error) {
 	if _, err := os.Stat("/var/run/docker.sock"); err == nil {
 		return "docker", nil
 	}
-	return "none", fmt.Errorf("No container engine found on this server.")
+	return "none", fmt.Errorf("no container engine found on this server")
 }
 
-// GetContainerShortID return short ID of a container full ID
-// by default we substract the first 12 char
+// GetContainerShortID returns the first 12 characters of a container ID.
 func GetContainerShortID(fullID string) string {
 	if len(fullID) < 12 {
 		return fullID
@@ -43,13 +45,10 @@ func GetContainerShortID(fullID string) string {
 	return fullID[:12]
 }
 
-// GetContainerSocketPath return container engine socket path
-// Parameters:
+// GetContainerSocketPath returns the socket path for the given container engine.
 func GetContainerSocketPath(ce string) string {
 	if ce == "podman" {
-		// For rootful podman
 		podmanSocketPath := "/run/podman/podman.sock"
-		// For rootless podman
 		if val := os.Getenv("XDG_RUNTIME_DIR"); val != "" {
 			podmanSocketPath = val + "/podman/podman.sock"
 		}
@@ -58,8 +57,7 @@ func GetContainerSocketPath(ce string) string {
 	return "/var/run/docker.sock"
 }
 
-// ListenContainerEvents start listen on container events
-// and trigger a callback when the container is terminating
+// ListenContainerEvents subscribes to container events and calls onDie when a container exits.
 func ListenContainerEvents(client *docker.Client, onDie func(containerID string, exitCode string)) error {
 	events := make(chan *docker.APIEvents)
 	if err := client.AddEventListener(events); err != nil {
@@ -70,7 +68,7 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 	go func() {
 		for ev := range events {
 			infoLogger.Printf("Event received: %s on container %s", ev.Status, GetContainerShortID(ev.ID))
-			if ev.Status == "die" && os.Getenv("LOG_LEVEL") != "debug" {
+			if ev.Status == "die" {
 				// exitCode => docker, containerExitCode => podman
 				exitCode := ev.Actor.Attributes["containerExitCode"]
 				if exitCode == "" {
@@ -84,38 +82,33 @@ func ListenContainerEvents(client *docker.Client, onDie func(containerID string,
 	return nil
 }
 
-// ProvisionNewContainer creates and starts a container using the specified container engine socket,
-// image name, and environment variables. It listens for container termination events and handles cleanup or error logging.
-// Parameters:
-//   - ce: the container engine type ("docker" or "podman").
-//   - imageName: the name of the container image to use.
-//   - env: a slice of environment variables to set in the container.
+// ProvisionNewContainer creates and starts a container from the given image with the given env vars.
 func ProvisionNewContainer(client *docker.Client, imageName string, env []string) error {
 	container, err := CreateContainer(client, imageName, env)
 	if err != nil {
 		return err
 	}
 
-	err = client.StartContainer(container.ID, nil)
-	if err != nil {
-		return fmt.Errorf("Encounter an error when starting container: %v", err)
+	if err = client.StartContainer(container.ID, nil); err != nil {
+		return fmt.Errorf("failed to start container: %v", err)
 	}
 	infoLogger.Println("Container started with ID:", GetContainerShortID(container.ID))
 	return nil
 }
 
-// InitLocalContainerClient
+// InitLocalContainerClient creates a Docker-compatible client connected to the local socket.
 func InitLocalContainerClient(ce string) (*docker.Client, error) {
 	socket := GetContainerSocketPath(ce)
 	infoLogger.Println("Container engine socket path found:", socket)
 	client, err := docker.NewClient("unix://" + socket)
 	if err != nil {
-		return nil, fmt.Errorf("unable to init Docker client: %v", err)
+		return nil, fmt.Errorf("unable to init container client: %v", err)
 	}
 	return client, nil
 }
 
-// CreateContainer
+// CreateContainer creates (but does not start) a labelled runner container.
+// Drops all Linux capabilities and adds back only what a CI runner needs.
 func CreateContainer(client *docker.Client, imageName string, env []string) (*docker.Container, error) {
 	opts := docker.CreateContainerOptions{
 		Config: &docker.Config{
@@ -127,35 +120,38 @@ func CreateContainer(client *docker.Client, imageName string, env []string) (*do
 			},
 		},
 		HostConfig: &docker.HostConfig{
-			CapAdd: []string{"all"},
+			CapDrop: []string{"ALL"},
+			CapAdd:  []string{"CHOWN", "SETUID", "SETGID", "FOWNER", "NET_BIND_SERVICE", "SYS_PTRACE"},
 		},
 	}
 	container, err := client.CreateContainer(opts)
 	if err != nil {
-		return nil, fmt.Errorf("Encounter an error when creating container: %v", err)
+		return nil, fmt.Errorf("failed to create container: %v", err)
 	}
 	return container, nil
 }
 
-// handleContainerExit remove a container when the exit code = 0
-// and print a error when a container terminated with an error (exit code != 0)
+// handleContainerExit returns a callback that removes successfully exited containers
+// and logs failures for non-zero exit codes.
 func handleContainerExit(client *docker.Client) func(string, string) {
 	return func(containerID string, exitCode string) {
-		if _exitCode, err := strconv.Atoi(exitCode); err == nil {
-			if _exitCode != 0 {
-				errorLogger.Printf("Container %s terminated with exit code %s\n", containerID, exitCode)
-				errorLogger.Println("To find out what happened, please inspect the container logs")
-			} else {
-				infoLogger.Printf("Container %s terminated with exit code %s\n", containerID, exitCode)
-				client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID})
-			}
-		} else {
-			errorLogger.Println(err)
+		_exitCode, err := strconv.Atoi(exitCode)
+		if err != nil {
+			errorLogger.Printf("Failed to parse exit code %q for container %s: %v", exitCode, GetContainerShortID(containerID), err)
+			return
+		}
+		if _exitCode != 0 {
+			errorLogger.Printf("Container %s terminated with exit code %d — inspect logs for details", GetContainerShortID(containerID), _exitCode)
+			return
+		}
+		infoLogger.Printf("Container %s terminated successfully, removing", GetContainerShortID(containerID))
+		if err := client.RemoveContainer(docker.RemoveContainerOptions{ID: containerID}); err != nil {
+			errorLogger.Printf("Failed to remove container %s: %v", GetContainerShortID(containerID), err)
 		}
 	}
 }
 
-// Check if crypto signature are equals
+// isValidSignature verifies an HMAC-SHA256 webhook signature against a secret.
 func isValidSignature(body []byte, signature string, secret string) bool {
 	mac := hmac.New(sha256.New, []byte(secret))
 	mac.Write(body)
@@ -170,28 +166,23 @@ type ContainerOpts struct {
 }
 
 var (
-	// Limit the number of concurrent container creations
 	maxConcurrentContainers = 5
-	containerJobQueue       = make(chan ContainerOpts, 100) // buffered channel for jobs
+	containerJobQueue       = make(chan ContainerOpts, 100)
 )
 
 func containerWorker() {
 	for val := range containerJobQueue {
-		err := ProvisionNewContainer(val.Client, val.Image, val.Env)
-		if err != nil {
+		if err := ProvisionNewContainer(val.Client, val.Image, val.Env); err != nil {
 			errorLogger.Println(err)
 		}
 	}
 }
 
-// Test provisioning and set container label
-// delete container using label
-
-// Provision a new container runner
+// ProvisionNewRunner requests a registration token and enqueues a new container runner.
 func ProvisionNewRunner(sm *ServerConfigManager) {
 	runnerRegistrationToken, err := sm.getRunnerRegistationToken()
 	if err != nil {
-		errorLogger.Fatalln(err)
+		errorLogger.Println(err)
 		return
 	}
 
@@ -211,8 +202,14 @@ func ProvisionNewRunner(sm *ServerConfigManager) {
 	}
 }
 
-// Webhook endpoint handler
+// webhookHandler processes GitHub webhook payloads and provisions runners on queued workflow_job events.
 func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Header.Get("X-GitHub-Event") != "workflow_job" {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+		return
+	}
+
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, "failed to read body", http.StatusBadRequest)
@@ -223,18 +220,13 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	signature := r.Header.Get("X-Hub-Signature-256")
 	secret := sm.Config.WebhookToken
 
-	// If a secret is configured, require and validate signature.
-	if secret != "" {
-		if signature == "" {
-			http.Error(w, "missing signature", http.StatusUnauthorized)
-			return
-		}
-		if !isValidSignature(body, signature, secret) {
-			http.Error(w, "invalid signature", http.StatusUnauthorized)
-			return
-		}
-	} else if signature != "" {
-		warningLogger.Println("Webhook secret is not set; skipping signature validation")
+	if signature == "" {
+		http.Error(w, "missing signature", http.StatusUnauthorized)
+		return
+	}
+	if !isValidSignature(body, signature, secret) {
+		http.Error(w, "invalid signature", http.StatusUnauthorized)
+		return
 	}
 
 	var event WorkflowJobEvent
@@ -250,39 +242,46 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	infoLogger.Printf("New job queued: ID=%d", event.WorkflowJob.ID)
-
 	ProvisionNewRunner(sm)
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte(`{}`))
 }
 
-// Pull a container image from a registry
-func PullContainerImage(client *docker.Client, imageName string) (bool, error) {
-	infoLogger.Printf("Trying to pull container image %s.", imageName)
-	// Split image name parts
-	parts := strings.Split(imageName, ":")
-	if len(parts) != 2 {
-		return false, fmt.Errorf("invalid image name format: %s (expected repo:tag)", imageName)
+// parseImageRef splits an image reference into repository and tag.
+// Handles registries with ports (e.g. registry:5000/image:tag) and defaults tag to "latest".
+func parseImageRef(ref string) (repository, tag string) {
+	lastSlash := strings.LastIndex(ref, "/")
+	lastColon := strings.LastIndex(ref, ":")
+	if lastColon > lastSlash {
+		return ref[:lastColon], ref[lastColon+1:]
 	}
+	return ref, "latest"
+}
 
-	if strings.HasPrefix(parts[0], "localhost") {
-		warningLogger.Printf("Container image %s cannot be pulled from remote as it is on localhost.", imageName)
-		return true, nil
+// PullContainerImage pulls an image from a remote registry.
+// Localhost images are skipped with a warning.
+func PullContainerImage(client *docker.Client, imageName string) error {
+	infoLogger.Printf("Trying to pull container image %s.", imageName)
+
+	repo, tag := parseImageRef(imageName)
+
+	if strings.HasPrefix(repo, "localhost") {
+		warningLogger.Printf("Skipping pull for localhost image %s.", imageName)
+		return nil
 	}
 
 	if err := client.PullImage(docker.PullImageOptions{
-		Repository: parts[0],
-		Tag:        parts[1],
+		Repository: repo,
+		Tag:        tag,
 	}, docker.AuthConfiguration{}); err != nil {
-		return false, fmt.Errorf("failed to pull container image %s: %w", imageName, err)
+		return fmt.Errorf("failed to pull container image %s: %w", imageName, err)
 	}
 
 	infoLogger.Printf("Container image %s pulled successfully.", imageName)
-	return true, nil
+	return nil
 }
 
-// Main
 func main() {
 	port := 3000
 
@@ -290,61 +289,70 @@ func main() {
 	if err != nil {
 		errorLogger.Fatal(err)
 	}
-	// Detect container engine
+
 	ce := cfg.RunnerContainerEngine
 	if ce == "" {
 		ce, _ = WhichContainerEngine()
 	}
 	infoLogger.Println("Container Engine:", ce)
-	// Init container client
+
 	containerClient, err := InitLocalContainerClient(ce)
 	if err != nil {
 		errorLogger.Fatal(err)
 	}
-	// Check if container image exists so the server fail fast
-	// when image not found
-	imageExists, err := PullContainerImage(containerClient, cfg.RunnerContainerImage)
-	if !imageExists {
+
+	if err := PullContainerImage(containerClient, cfg.RunnerContainerImage); err != nil {
 		errorLogger.Fatal(err)
 	}
-	// Init the server config manager
+
 	manager := &ServerConfigManager{
 		Config:          cfg,
 		ContainerClient: containerClient,
 	}
 
-	// Get runner registration token, so the server fail fast,
-	// when auth server (GitHub) return an error
-	_, err = manager.getRunnerRegistationToken()
-	if err != nil {
+	if _, err = manager.getRunnerRegistationToken(); err != nil {
 		errorLogger.Fatal(err)
 	}
-	// Start worker pool
+
 	for range maxConcurrentContainers {
 		go containerWorker()
 	}
 
-	// Listening to container events
-	ListenContainerEvents(containerClient, handleContainerExit(containerClient))
-
-	// Test provision
-	infoLogger.Println("Trying to provision a runner")
-	ProvisionNewRunner(manager)
+	if err := ListenContainerEvents(containerClient, handleContainerExit(containerClient)); err != nil {
+		errorLogger.Fatal(err)
+	}
 
 	if os.Getenv("PORT") != "" {
 		if _port, err := strconv.Atoi(os.Getenv("PORT")); err == nil {
 			port = _port
 		} else {
-			fmt.Printf("Cannot convert %s into integer\n", os.Getenv("PORT"))
+			warningLogger.Printf("Cannot parse PORT=%s as integer, using default %d", os.Getenv("PORT"), port)
 		}
 	}
 
-	// Http handlers
-	http.HandleFunc("/webhook", manager.webhookHandler)
+	mux := http.NewServeMux()
+	mux.HandleFunc("/webhook", manager.webhookHandler)
+
+	server := &http.Server{
+		Addr:    fmt.Sprintf(":%d", port),
+		Handler: mux,
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
+	go func() {
+		<-ctx.Done()
+		infoLogger.Println("Shutting down server...")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if err := server.Shutdown(shutdownCtx); err != nil {
+			errorLogger.Printf("Server shutdown error: %v", err)
+		}
+	}()
 
 	infoLogger.Printf("Github webhook server is listening on port %d\n", port)
-	addr := fmt.Sprintf(":%d", port)
-	if err := http.ListenAndServe(addr, nil); err != nil {
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		errorLogger.Printf("Server error: %v", err)
 	}
 }
