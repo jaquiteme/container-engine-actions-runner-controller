@@ -22,11 +22,16 @@ type RunnerRegistrationToken struct {
 	ExpiresAt time.Time
 }
 
+// TokenFetcher is a function that retrieves a new runner registration token.
+// It is injectable to allow testing without real GitHub API calls.
+type TokenFetcher func(repoPath, accessToken string) (RunnerRegistrationToken, error)
+
 type ServerConfigManager struct {
 	Mu              sync.Mutex
 	Token           RunnerRegistrationToken
 	Config          *Config
 	ContainerClient *docker.Client
+	fetcher         TokenFetcher
 }
 
 // fetchNewRunnerRegistrationTokenForPrivateRepo makes an API request to retrieve a runner
@@ -88,8 +93,13 @@ func (tm *ServerConfigManager) getRunnerRegistationToken() (string, error) {
 	tm.Mu.Lock()
 	defer tm.Mu.Unlock()
 
+	fetcher := tm.fetcher
+	if fetcher == nil {
+		fetcher = fetchNewRunnerRegistrationTokenForPrivateRepo
+	}
+
 	if tm.Token.Value == "" || time.Until(tm.Token.ExpiresAt) < 5*time.Minute {
-		token, err := fetchNewRunnerRegistrationTokenForPrivateRepo(tm.Config.RunnerRepoPath, tm.Config.RunnerRepoAccessToken)
+		token, err := fetcher(tm.Config.RunnerRepoPath, tm.Config.RunnerRepoAccessToken)
 		if err != nil {
 			return "", fmt.Errorf("unable to fetch new runner registration token: %v", err)
 		}
