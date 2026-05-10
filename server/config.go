@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 )
 
 type Config struct {
@@ -19,7 +20,7 @@ type Config struct {
 func ReadConfig() (*Config, error) {
 	cfg := Config{
 		RunnerRepoPath:        os.Getenv("GH_RUNNER_REPO_PATH"),
-		RunnerRepoAccessToken: os.Getenv("GH_RUNNER_REPO_ACCESS_TOKEN"),
+		RunnerRepoAccessToken: strings.TrimSpace(os.Getenv("GH_RUNNER_REPO_ACCESS_TOKEN")),
 		RunnerContainerImage:  os.Getenv("GH_RUNNER_CT_IMAGE"),
 		RunnerContainerEngine: os.Getenv("CT_ENGINE"),
 		WebhookToken:          os.Getenv("GH_WEBHOOK_SECRET"),

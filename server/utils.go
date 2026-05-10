@@ -55,7 +55,8 @@ func fetchNewRunnerRegistrationTokenForPrivateRepo(repoPath string, accessToken 
 	}
 	req.Header.Add("Authorization", "Bearer "+accessToken)
 	req.Header.Add("Accept", "application/vnd.github+json")
-	req.Header.Add("X-GitHub-Api-Version", "2022-11-28")
+	req.Header.Add("X-GitHub-Api-Version", "2026-03-10")
+	req.Header.Add("User-Agent", "container-engine-actions-runner-controller")
 
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
