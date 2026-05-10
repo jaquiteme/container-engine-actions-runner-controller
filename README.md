@@ -123,6 +123,7 @@ CT_ENGINE="podman" \
 GH_RUNNER_REPO_PATH="name/repo" \
 GH_RUNNER_REPO_ACCESS_TOKEN="ghp_XXXXXXXXXXXXXX" \
 GH_RUNNER_CT_IMAGE="docker.io/202047/gh-runner:latest" \
+GH_RUNNER_LABELS=self-hosted \
 ce-arc-server
 ```
 
@@ -148,6 +149,7 @@ jobs:
 | `GH_RUNNER_CT_IMAGE`          | ✅       | Runner container image            | `docker.io/user/gh-runner:latest` |
 | `CT_ENGINE`                   | ❌       | Podman or Docker                  | `podman`                          |
 | `GH_WEBHOOK_SECRET`           | ✅       | Webhook secret                    | `a-secret`                        |
+| `GH_RUNNER_LABELS`            | ❌       | Job labels                        | `self-hosted`                     |
 
 ## Limitations
 

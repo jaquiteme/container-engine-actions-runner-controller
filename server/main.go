@@ -22,8 +22,27 @@ import (
 type WorkflowJobEvent struct {
 	Action      string `json:"action"`
 	WorkflowJob struct {
-		ID int `json:"id"`
+		ID     int      `json:"id"`
+		Labels []string `json:"labels"`
 	} `json:"workflow_job"`
+}
+
+// jobHasRequiredLabels returns true if jobLabels contains all entries in required.
+// An empty required slice matches any job.
+func jobHasRequiredLabels(jobLabels []string, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	labelSet := make(map[string]struct{}, len(jobLabels))
+	for _, l := range jobLabels {
+		labelSet[l] = struct{}{}
+	}
+	for _, r := range required {
+		if _, ok := labelSet[r]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // WhichContainerEngine auto-detects the container engine available on the host.
@@ -236,6 +255,13 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	if event.Action != "queued" {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+		return
+	}
+
+	if !jobHasRequiredLabels(event.WorkflowJob.Labels, sm.Config.RunnerLabels) {
+		infoLogger.Printf("Job ID=%d skipped: labels %v do not match required %v", event.WorkflowJob.ID, event.WorkflowJob.Labels, sm.Config.RunnerLabels)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{}`))
 		return
