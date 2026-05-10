@@ -2,9 +2,18 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 )
+
+func parseImageRef(ref string) (string, string) {
+	tag := "latest"
+	if idx := strings.LastIndex(ref, ":"); idx != -1 && strings.LastIndex(ref, "/") < idx {
+		return ref[:idx], ref[idx+1:]
+	}
+	return ref, tag
+}
 
 func TestGetContainerShortID(t *testing.T) {
 	tests := []struct {
