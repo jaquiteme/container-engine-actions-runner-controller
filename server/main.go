@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -150,8 +151,29 @@ func CreateContainer(client *docker.Client, imageName string, env []string) (*do
 	return container, nil
 }
 
-// handleContainerExit returns a callback that removes successfully exited containers
-// and logs failures for non-zero exit codes.
+// captureContainerLogs retrieves stdout and stderr from a container and writes them to the info logger.
+func captureContainerLogs(client *docker.Client, containerID string) {
+	var buf bytes.Buffer
+	err := client.Logs(docker.LogsOptions{
+		Container:    containerID,
+		Stdout:       true,
+		Stderr:       true,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+	})
+	if err != nil {
+		errorLogger.Printf("Failed to retrieve logs for container %s: %v", GetContainerShortID(containerID), err)
+		return
+	}
+	if buf.Len() == 0 {
+		infoLogger.Printf("No logs found for container %s", GetContainerShortID(containerID))
+		return
+	}
+	infoLogger.Printf("Logs for container %s:\n%s", GetContainerShortID(containerID), buf.String())
+}
+
+// handleContainerExit returns a callback that captures logs, removes successfully exited containers,
+// and retains failed containers (non-zero exit code) for manual inspection.
 func handleContainerExit(client *docker.Client) func(string, string) {
 	return func(containerID string, exitCode string) {
 		_exitCode, err := strconv.Atoi(exitCode)
@@ -159,8 +181,9 @@ func handleContainerExit(client *docker.Client) func(string, string) {
 			errorLogger.Printf("Failed to parse exit code %q for container %s: %v", exitCode, GetContainerShortID(containerID), err)
 			return
 		}
+		captureContainerLogs(client, containerID)
 		if _exitCode != 0 {
-			errorLogger.Printf("Container %s terminated with exit code %d — inspect logs for details", GetContainerShortID(containerID), _exitCode)
+			errorLogger.Printf("Container %s terminated with exit code %d — container retained for inspection", GetContainerShortID(containerID), _exitCode)
 			return
 		}
 		infoLogger.Printf("Container %s terminated successfully, removing", GetContainerShortID(containerID))
