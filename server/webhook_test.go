@@ -141,3 +141,67 @@ func TestWebhookHandler_ActionQueued(t *testing.T) {
 		t.Errorf("got %d, want %d", rr.Code, http.StatusOK)
 	}
 }
+
+func TestWebhookHandler_LabelFilter_Match(t *testing.T) {
+	sm := makeWebhookTestManager()
+	sm.Config.RunnerLabels = []string{"self-hosted"}
+	body := `{"action":"queued","workflow_job":{"id":1,"labels":["self-hosted","linux"]}}`
+	sig := signBody([]byte(body), "secret")
+	rr := sendWebhook(t, sm, "workflow_job", body, sig)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestWebhookHandler_LabelFilter_NoMatch(t *testing.T) {
+	sm := makeWebhookTestManager()
+	sm.Config.RunnerLabels = []string{"self-hosted"}
+	body := `{"action":"queued","workflow_job":{"id":2,"labels":["ubuntu-latest"]}}`
+	sig := signBody([]byte(body), "secret")
+	rr := sendWebhook(t, sm, "workflow_job", body, sig)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestWebhookHandler_LabelFilter_NoLabelsConfigured(t *testing.T) {
+	sm := makeWebhookTestManager()
+	body := `{"action":"queued","workflow_job":{"id":3,"labels":["ubuntu-latest"]}}`
+	sig := signBody([]byte(body), "secret")
+	rr := sendWebhook(t, sm, "workflow_job", body, sig)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestWebhookHandler_LabelFilter_MultipleRequiredLabels(t *testing.T) {
+	sm := makeWebhookTestManager()
+	sm.Config.RunnerLabels = []string{"self-hosted", "linux"}
+	body := `{"action":"queued","workflow_job":{"id":4,"labels":["self-hosted","linux","x64"]}}`
+	sig := signBody([]byte(body), "secret")
+	rr := sendWebhook(t, sm, "workflow_job", body, sig)
+	if rr.Code != http.StatusOK {
+		t.Errorf("got %d, want %d", rr.Code, http.StatusOK)
+	}
+}
+
+func TestJobHasRequiredLabels(t *testing.T) {
+	tests := []struct {
+		jobLabels []string
+		required  []string
+		want      bool
+	}{
+		{[]string{"self-hosted", "linux"}, []string{"self-hosted"}, true},
+		{[]string{"ubuntu-latest"}, []string{"self-hosted"}, false},
+		{[]string{"self-hosted", "linux"}, []string{"self-hosted", "linux"}, true},
+		{[]string{"self-hosted"}, []string{"self-hosted", "linux"}, false},
+		{[]string{"ubuntu-latest"}, []string{}, true},
+		{[]string{}, []string{}, true},
+	}
+	for _, tc := range tests {
+		got := jobHasRequiredLabels(tc.jobLabels, tc.required)
+		if got != tc.want {
+			t.Errorf("jobHasRequiredLabels(%v, %v) = %v, want %v", tc.jobLabels, tc.required, got, tc.want)
+		}
+	}
+}

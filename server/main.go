@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -22,8 +23,27 @@ import (
 type WorkflowJobEvent struct {
 	Action      string `json:"action"`
 	WorkflowJob struct {
-		ID int `json:"id"`
+		ID     int      `json:"id"`
+		Labels []string `json:"labels"`
 	} `json:"workflow_job"`
+}
+
+// jobHasRequiredLabels returns true if jobLabels contains all entries in required.
+// An empty required slice matches any job.
+func jobHasRequiredLabels(jobLabels []string, required []string) bool {
+	if len(required) == 0 {
+		return true
+	}
+	labelSet := make(map[string]struct{}, len(jobLabels))
+	for _, l := range jobLabels {
+		labelSet[l] = struct{}{}
+	}
+	for _, r := range required {
+		if _, ok := labelSet[r]; !ok {
+			return false
+		}
+	}
+	return true
 }
 
 // WhichContainerEngine auto-detects the container engine available on the host.
@@ -131,8 +151,29 @@ func CreateContainer(client *docker.Client, imageName string, env []string) (*do
 	return container, nil
 }
 
-// handleContainerExit returns a callback that removes successfully exited containers
-// and logs failures for non-zero exit codes.
+// captureContainerLogs retrieves stdout and stderr from a container and writes them to the info logger.
+func captureContainerLogs(client *docker.Client, containerID string) {
+	var buf bytes.Buffer
+	err := client.Logs(docker.LogsOptions{
+		Container:    containerID,
+		Stdout:       true,
+		Stderr:       true,
+		OutputStream: &buf,
+		ErrorStream:  &buf,
+	})
+	if err != nil {
+		errorLogger.Printf("Failed to retrieve logs for container %s: %v", GetContainerShortID(containerID), err)
+		return
+	}
+	if buf.Len() == 0 {
+		infoLogger.Printf("No logs found for container %s", GetContainerShortID(containerID))
+		return
+	}
+	infoLogger.Printf("Logs for container %s:\n%s", GetContainerShortID(containerID), buf.String())
+}
+
+// handleContainerExit returns a callback that captures logs, removes successfully exited containers,
+// and retains failed containers (non-zero exit code) for manual inspection.
 func handleContainerExit(client *docker.Client) func(string, string) {
 	return func(containerID string, exitCode string) {
 		_exitCode, err := strconv.Atoi(exitCode)
@@ -140,8 +181,9 @@ func handleContainerExit(client *docker.Client) func(string, string) {
 			errorLogger.Printf("Failed to parse exit code %q for container %s: %v", exitCode, GetContainerShortID(containerID), err)
 			return
 		}
+		captureContainerLogs(client, containerID)
 		if _exitCode != 0 {
-			errorLogger.Printf("Container %s terminated with exit code %d — inspect logs for details", GetContainerShortID(containerID), _exitCode)
+			errorLogger.Printf("Container %s terminated with exit code %d — container retained for inspection", GetContainerShortID(containerID), _exitCode)
 			return
 		}
 		infoLogger.Printf("Container %s terminated successfully, removing", GetContainerShortID(containerID))
@@ -236,6 +278,13 @@ func (sm *ServerConfigManager) webhookHandler(w http.ResponseWriter, r *http.Req
 	}
 
 	if event.Action != "queued" {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{}`))
+		return
+	}
+
+	if !jobHasRequiredLabels(event.WorkflowJob.Labels, sm.Config.RunnerLabels) {
+		infoLogger.Printf("Job ID=%d skipped: labels %v do not match required %v", event.WorkflowJob.ID, event.WorkflowJob.Labels, sm.Config.RunnerLabels)
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{}`))
 		return

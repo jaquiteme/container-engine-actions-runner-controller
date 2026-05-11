@@ -12,11 +12,12 @@ type Config struct {
 	RunnerContainerImage  string
 	RunnerContainerEngine string
 	WebhookToken          string
+	RunnerLabels          []string
 }
 
 // ReadConfig reads configuration from environment variables and returns a validated Config.
 // Required: GH_RUNNER_REPO_PATH, GH_RUNNER_REPO_ACCESS_TOKEN, GH_RUNNER_CT_IMAGE, GH_WEBHOOK_SECRET.
-// Optional: CT_ENGINE.
+// Optional: CT_ENGINE, GH_RUNNER_LABELS (comma-separated, e.g. "self-hosted,linux").
 func ReadConfig() (*Config, error) {
 	cfg := Config{
 		RunnerRepoPath:        os.Getenv("GH_RUNNER_REPO_PATH"),
@@ -41,6 +42,14 @@ func ReadConfig() (*Config, error) {
 
 	if cfg.WebhookToken == "" {
 		return nil, fmt.Errorf("env variable GH_WEBHOOK_SECRET is required")
+	}
+
+	if val := os.Getenv("GH_RUNNER_LABELS"); val != "" {
+		for _, l := range strings.Split(val, ",") {
+			if trimmed := strings.TrimSpace(l); trimmed != "" {
+				cfg.RunnerLabels = append(cfg.RunnerLabels, trimmed)
+			}
+		}
 	}
 
 	return &cfg, nil
