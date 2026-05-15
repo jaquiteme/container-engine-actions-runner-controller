@@ -14,3 +14,7 @@ bin
 
 # Act secrets
 .secrets
+
+# Quadlet — generated files (contain real secrets or host-specific paths)
+deploy/quadlet/ce-arc-server-secret.yml
+deploy/quadlet/ce-arc-server-pod.yml

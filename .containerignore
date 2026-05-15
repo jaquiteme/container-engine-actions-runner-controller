@@ -1,0 +1,31 @@
+# Build context exclusions — keeps the image build fast and the context clean.
+
+# Version control
+.git/
+
+# Local secrets and config
+.secrets
+.env
+*.pem
+
+# Compiled outputs (rebuilt inside the builder stage)
+bin/
+coverage.out
+
+# Documentation and assets (not needed in the image)
+img/
+README.md
+LICENSE
+
+# Runner containerfiles (built separately, not part of the orchestrator image)
+runner/
+
+# Scripts only used on the host
+scripts/
+
+# Deploy artifacts (runtime, not build-time)
+deploy/
+
+# IDE / OS noise
+.vscode/
+.DS_STORE

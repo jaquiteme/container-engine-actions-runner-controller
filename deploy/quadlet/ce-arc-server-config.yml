@@ -1,0 +1,26 @@
+# Kubernetes ConfigMap — non-sensitive configuration for ce-arc-server.
+# Edit the values below, then run deploy/quadlet/setup.sh to install.
+#
+# Safe to commit — contains no secrets.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ce-arc-server-config
+data:
+  # Force Podman as the container engine (matches the socket path in the pod spec).
+  CT_ENGINE: "podman"
+
+  # Webhook server listen port. Must match PublishPort in the .kube Quadlet file.
+  PORT: "3000"
+
+  # GitHub repository that runners will register against (format: owner/repo).
+  GH_RUNNER_REPO_PATH: "owner/repo"
+
+  # Runner container image built with scripts/build_container_image.sh.
+  # localhost/ prefix skips any remote pull attempt.
+  GH_RUNNER_CT_IMAGE: "localhost/gh-runner:latest"
+
+  # Optional: comma-separated job labels to filter dispatched workflow jobs.
+  # Leave empty to accept every queued job.
+  # Example: "self-hosted,linux,ce-arc"
+  GH_RUNNER_LABELS: ""
