@@ -1,0 +1,57 @@
+# podman-compose up -d
+#
+# Prerequisites
+# ─────────────
+# 1. Build the image first:
+#      podman build -t ce-arc-server:latest .
+# 2. Start the rootless Podman socket on the host:
+#      systemctl --user enable --now podman.socket
+# 3. Export required variables or create a .env file alongside this file:
+#      GH_RUNNER_REPO_PATH=owner/repo
+#      GH_RUNNER_REPO_ACCESS_TOKEN=ghp_...
+#      GH_RUNNER_CT_IMAGE=localhost/gh-runner:latest
+#      GH_WEBHOOK_SECRET=<your-webhook-secret>
+#      UID=<output of `id -u`>
+#      GID=<output of `id -g`>
+#
+# Optional
+#      GH_RUNNER_LABELS=self-hosted,linux
+#      PORT=3000
+
+services:
+  ce-arc-server:
+    image: ce-arc-server:latest
+    container_name: ce-arc-server
+    restart: unless-stopped
+
+    # Run as the host user so the process UID matches the Podman socket owner.
+    user: "${UID}:${GID}"
+
+    # Keep the host user's UID mapped 1:1 inside the container namespace.
+    userns_mode: keep-id
+
+    cap_drop:
+      - ALL
+
+    security_opt:
+      - no-new-privileges:true
+
+    read_only: true
+
+    volumes:
+      # Bind-mount the host rootless Podman socket.
+      # The path matches WhichContainerEngine()'s first check in main.go.
+      # `:z` applies the shared SELinux label so the container can access it.
+      - "${XDG_RUNTIME_DIR:-/run/user/1000}/podman/podman.sock:/run/podman/podman.sock:z"
+
+    environment:
+      CT_ENGINE: podman
+      PORT: "${PORT:-3000}"
+      GH_RUNNER_REPO_PATH: "${GH_RUNNER_REPO_PATH}"
+      GH_RUNNER_REPO_ACCESS_TOKEN: "${GH_RUNNER_REPO_ACCESS_TOKEN}"
+      GH_RUNNER_CT_IMAGE: "${GH_RUNNER_CT_IMAGE}"
+      GH_WEBHOOK_SECRET: "${GH_WEBHOOK_SECRET}"
+      GH_RUNNER_LABELS: "${GH_RUNNER_LABELS:-}"
+
+    ports:
+      - "${PORT:-3000}:${PORT:-3000}"

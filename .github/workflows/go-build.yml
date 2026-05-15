@@ -73,3 +73,33 @@ jobs:
           password: ${{ secrets.CT_REGISTRY_PASSWORD }}
           context: ./runner
           containerfile: ./runner/runner-ubuntu.containerfile
+
+  publish-server-image:
+    needs: build
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set image tag version
+        id: set-tag
+        run: |
+          tag="${{ github.sha }}"
+          echo "image_tag=${tag:0:8}" >> "$GITHUB_OUTPUT"
+
+      - name: Push server image to ghcr.io
+        uses: ./.github/actions/publish-container-image
+        with:
+          registry: ghcr.io
+          namespace: ${{ github.repository_owner }}
+          image_name: "ce-arc-server"
+          image_tags: "${{ steps.set-tag.outputs.image_tag }}"
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+          context: .
+          containerfile: ./Dockerfile
