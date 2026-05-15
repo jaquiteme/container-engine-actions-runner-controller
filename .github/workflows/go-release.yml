@@ -63,6 +63,6 @@ jobs:
           GOOS=darwin  GOARCH=arm64 go build -o dist/${BINARY_NAME}-${VERSION}-darwin-arm64 "${PACKAGES_DIR}"
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v3
         with:
           files: dist/*
