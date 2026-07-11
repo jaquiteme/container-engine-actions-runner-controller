@@ -28,6 +28,14 @@ spec:
         capabilities:
           drop: ["ALL"]   # The orchestrator only speaks HTTP over a Unix socket.
         readOnlyRootFilesystem: true
+        seLinuxOptions:
+          # Kubernetes-YAML hostPath volumes have no :z/:Z relabel equivalent, so
+          # the bind-mounted Podman socket keeps its host SELinux label. On
+          # enforcing systems (e.g. Fedora) that denies the connect with a plain
+          # "permission denied". spc_t is the standard "super-privileged
+          # container" type used to run unconfined instead of setting the whole
+          # host to permissive.
+          type: spc_t
 
       # All environment variables come from the ConfigMap and the Secret.
       # No plaintext secrets in this file.

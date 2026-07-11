@@ -120,6 +120,11 @@ func ProvisionNewContainer(client *docker.Client, imageName string, env []string
 func InitLocalContainerClient(ce string) (*docker.Client, error) {
 	socket := GetContainerSocketPath(ce)
 	infoLogger.Println("Container engine socket path found:", socket)
+
+	if _, err := os.Stat(socket); err != nil {
+		return nil, fmt.Errorf("%s socket not found at %s: if ce-arc-server is running in a container, mount the host socket to that path: %v", ce, socket, err)
+	}
+
 	client, err := docker.NewClient("unix://" + socket)
 	if err != nil {
 		return nil, fmt.Errorf("unable to init container client: %v", err)

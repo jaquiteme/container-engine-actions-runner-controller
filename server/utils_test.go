@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -45,6 +47,18 @@ func TestGetContainerSocketPath_Podman_XDG(t *testing.T) {
 	got := GetContainerSocketPath("podman")
 	if got != "/run/user/1000/podman/podman.sock" {
 		t.Errorf("got %q, want /run/user/1000/podman/podman.sock", got)
+	}
+}
+
+func TestInitLocalContainerClient_MissingSocket(t *testing.T) {
+	t.Setenv("XDG_RUNTIME_DIR", filepath.Join(t.TempDir(), "does-not-exist"))
+
+	_, err := InitLocalContainerClient("podman")
+	if err == nil {
+		t.Fatal("expected error for missing socket, got nil")
+	}
+	if !strings.Contains(err.Error(), "socket not found") {
+		t.Errorf("expected error to mention missing socket, got: %v", err)
 	}
 }
 
